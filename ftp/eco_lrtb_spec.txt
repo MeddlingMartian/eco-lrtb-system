@@ -1,0 +1,109 @@
+================================================================================
+  ECO_L_R_T_B_SYSTEM -- SPECIFICATION v1.0.0
+  Eco Left Right Top Bottom Document Formatting System
+================================================================================
+  Copyright (C) 2026 Tyler Blankenship
+  Copyright (C) 2026 Rae
+  Copyright (C) 2026 Lucas
+  Copyright (C) 2026 Daloze Benoit (Eregon)
+  MIT License
+================================================================================
+
+  ECO_L  =  Left   margin / padding / border
+  ECO_R  =  Right  margin / padding / border
+  ECO_T  =  Top    margin / padding / border
+  ECO_B  =  Bottom margin / padding / border
+
+================================================================================
+  1. BASE UNIT
+================================================================================
+
+  1 ECO_UNIT = 1 pixel at 96 dpi
+
+  Conversion table:
+
+  Unit          1 ECO_UNIT =      Notes
+  ----------    ----------------  --------------------------
+  px            1.000000          CSS pixel (96dpi)
+  pt            0.750000          Desktop point
+  mm            0.264583          Millimetre
+  in            0.010417          Inch (1/96)
+  DXA           15.000000         Word twip (1/1440 in)
+  EMU           9525.000000       OOXML English Metric Unit
+  rem           0.062500          CSS rem (base 16px)
+
+================================================================================
+  2. PRESETS
+================================================================================
+
+  Name          L      R      T      B      Description
+  ----------    ----   ----   ----   ----   ----------------------------
+  compact        48     48     48     48    0.50 in all sides
+  standard       72     72     96     96    0.75 in L/R, 1.00 in T/B
+  wide           96     96    144    144    1.00 in L/R, 1.50 in T/B
+  document      138    138    138    138    1.4375 in all (Word default)
+  web             0      0      0      0    Zero -- CSS handles layout
+
+  All values in ECO_UNIT (px at 96dpi).
+
+================================================================================
+  3. FILE REGISTRY
+================================================================================
+
+  ECO_LRTB.FILE             Master container format (this spec)
+  core/eco_lrtb.h           C header -- types and API declarations
+  core/eco_lrtb.c           C implementation -- pure C99, zero deps
+  core/eco_lrtb.cs          C# implementation -- .NET 6+, immutable struct
+  core/eco_lrtb.py          Python 3.9+ -- frozen dataclass, type-annotated
+  core/eco_lrtb.js          JavaScript -- V8/Nitro/Turbine optimized ESM
+  core/eco_lrtb.html        HTML/HTM -- live demo + embedded JS engine
+  core/eco_lrtb.php         PHP 8.1+ -- readonly class, enum units
+  core/eco_lrtb_w3c.css     W3C CSS -- @layer, custom properties, @page
+  core/eco_lrtb.nix         Nix derivation -- reproducible builds
+  polyfill/                 Browser polyfill -- ES5, IE11+, no CSS vars
+  nitro/eco_lrtb_nitro.js   JavaScriptCore (Safari/Nitro) optimized
+  nitro/eco_lrtb_v8.js      V8 (Chrome/Node) optimized -- hidden class
+  nitro/eco_lrtb_turbine.js Bun/Deno Turbine -- pure ESM, @__PURE__
+  apache/eco_lrtb.conf      Apache HTTP config -- MIME, CORS, cache
+  maven/pom.xml             Maven build -- Java 17 target
+  xml/eco_lrtb.xml          XML data format with XSD schema reference
+  ftp/eco_ftp_library.js    FTP protocol library + repository index
+
+================================================================================
+  4. SERIALIZATION FORMATS
+================================================================================
+
+  CSS:     margin: 96px 72px 96px 72px;        (T R B L)
+  XML:     <eco:lrtb L="72" R="72" T="96" B="96"/>
+  JSON:    {"L":72,"R":72,"T":96,"B":96}
+  OOXML:   <w:pgMar w:left="1080" w:right="1080" w:top="1440" w:bottom="1440"/>
+  PHP:     ['L'=>72,'R'=>72,'T'=>96,'B'=>96]
+  Python:  {'L':72,'R':72,'T':96,'B':96}
+
+================================================================================
+  5. DOCUMENT TARGET DEFAULTS
+================================================================================
+
+  Target        Default        Notes
+  ----------    -----------    --------------------------------
+  .txt / .md    standard       Visual frame only
+  .html         web            CSS handles margins
+  .docx         document       pgMar in DXA twips
+  .pdf          document       Points or mm
+  .xml          standard       Attribute-based
+  .php          web            CSS output via toCss()
+
+================================================================================
+  6. FTP REPOSITORY
+================================================================================
+
+  Protocol:   FTP (passive mode)
+  Host:       ftp.eco-lrtb.dev
+  Port:       21
+  Base path:  /pub/eco_lrtb/v1.0/
+  Index:      eco_ftp_index.json
+  Auth:       TOKEN
+
+================================================================================
+  END OF SPECIFICATION
+================================================================================
