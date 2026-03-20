@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="
+           http://maven.apache.org/POM/4.0.0
+           https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>dev.eco-lrtb</groupId>
+  <artifactId>eco-lrtb</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <name>Eco L R T B System</name>
+  <description>
+    Ecology Left Right Top Bottom document formatting system.
+    Provides a unified margin/padding/border model across all
+    target languages and document formats.
+  </description>
+  <url>https://github.com/MeddlingMartian/eco-lrtb-system</url>
+  <inceptionYear>2026</inceptionYear>
+
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/licenses/MIT</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>tyler</id>
+      <name>Tyler Blankenship</name>
+      <roles><role>lead</role></roles>
+    </developer>
+    <developer>
+      <id>rae</id>
+      <name>Rae</name>
+    </developer>
+    <developer>
+      <id>lucas</id>
+      <name>Lucas</name>
+    </developer>
+    <developer>
+      <id>eregon</id>
+      <name>Daloze Benoit (Eregon)</name>
+      <url>https://github.com/eregon</url>
+      <roles><role>contributor</role></roles>
+    </developer>
+  </developers>
+
+  <properties>
+    <java.version>17</java.version>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <eco.margin.L>72</eco.margin.L>
+    <eco.margin.R>72</eco.margin.R>
+    <eco.margin.T>96</eco.margin.T>
+    <eco.margin.B>96</eco.margin.B>
+    <eco.unit>px</eco.unit>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.10.2</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <version>3.25.3</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <sourceDirectory>src/main/java</sourceDirectory>
+    <testSourceDirectory>src/test/java</testSourceDirectory>
+
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>true</filtering>
+        <includes>
+          <include>eco_lrtb.xml</include>
+          <include>ECO_LRTB.FILE</include>
+        </includes>
+      </resource>
+    </resources>
+
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>17</release>
+          <compilerArgs>
+            <arg>-Xlint:all</arg>
+            <arg>-Xlint:-serial</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <includes>
+            <include>**/*Test.java</include>
+          </includes>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.3.0</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <mainClass>dev.ecolrtb.EcoLRTBDemo</mainClass>
+              <addClasspath>false</addClasspath>
+            </manifest>
+            <manifestEntries>
+              <Eco-Version>1.0.0</Eco-Version>
+              <Eco-Unit>${eco.unit}</Eco-Unit>
+              <Eco-L>${eco.margin.L}</Eco-L>
+              <Eco-R>${eco.margin.R}</Eco-R>
+              <Eco-T>${eco.margin.T}</Eco-T>
+              <Eco-B>${eco.margin.B}</Eco-B>
+            </manifestEntries>
+          </archive>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <version>3.6.3</version>
+        <configuration>
+          <source>17</source>
+          <doclint>all,-missing</doclint>
+          <windowtitle>Eco_L_R_T_B_System API</windowtitle>
+          <doctitle>Eco Left Right Top Bottom System v1.0.0</doctitle>
+          <bottom>
+            Copyright 2026 Tyler Blankenship, Rae, Lucas, Eregon. MIT License.
+          </bottom>
+        </configuration>
+        <executions>
+          <execution>
+            <id>attach-javadocs</id>
+            <goals><goal>jar</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.2.0</version>
+        <configuration>
+          <mainClass>dev.ecolrtb.EcoLRTBDemo</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>
