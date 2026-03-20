@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<eco:document
+  xmlns:eco="http://eco-lrtb.dev/ns/v1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://eco-lrtb.dev/ns/v1 eco_lrtb.xsd"
+  version="1.0">
+
+  <eco:meta>
+    <eco:title>Eco_L_R_T_B_System Configuration</eco:title>
+    <eco:version>1.0.0</eco:version>
+    <eco:created>2026-03-20</eco:created>
+    <eco:authors>
+      <eco:author>Tyler Blankenship</eco:author>
+      <eco:author>Rae</eco:author>
+      <eco:author>Lucas</eco:author>
+      <eco:author>Eregon</eco:author>
+    </eco:authors>
+  </eco:meta>
+
+  <eco:units base="px" dpi="96">
+    <eco:unit id="px"  ratio="1.0"      label="Pixels"/>
+    <eco:unit id="pt"  ratio="0.75"     label="Points"/>
+    <eco:unit id="mm"  ratio="0.26458"  label="Millimetres"/>
+    <eco:unit id="in"  ratio="0.010417" label="Inches"/>
+    <eco:unit id="dxa" ratio="15.0"     label="DXA Twips (Word)"/>
+    <eco:unit id="emu" ratio="9525.0"   label="EMU (OOXML)"/>
+    <eco:unit id="rem" ratio="0.0625"   label="CSS rem (base 16px)"/>
+  </eco:units>
+
+  <eco:presets>
+    <eco:preset id="compact"  label="Compact"
+      L="48"  R="48"  T="48"  B="48"  unit="px"/>
+    <eco:preset id="standard" label="Standard"
+      L="72"  R="72"  T="96"  B="96"  unit="px"/>
+    <eco:preset id="wide"     label="Wide"
+      L="96"  R="96"  T="144" B="144" unit="px"/>
+    <eco:preset id="document" label="Document (Word default)"
+      L="138" R="138" T="138" B="138" unit="px"/>
+    <eco:preset id="web"      label="Web"
+      L="0"   R="0"   T="0"   B="0"   unit="px"/>
+  </eco:presets>
+
+  <eco:config preset="standard" target="docx">
+    <eco:margin  L="72" R="72" T="96" B="96" unit="px"/>
+    <eco:padding L="0"  R="0"  T="0"  B="0"  unit="px"/>
+    <eco:border  L="0"  R="0"  T="0"  B="0"  unit="px"/>
+    <eco:page    width="816" height="1056" unit="px"/>
+  </eco:config>
+
+  <eco:registry>
+    <eco:file id="master"   path="ECO_LRTB.FILE"                format="FILE"/>
+    <eco:file id="c-header" path="core/eco_lrtb.h"              format="C"/>
+    <eco:file id="c-impl"   path="core/eco_lrtb.c"              format="C"/>
+    <eco:file id="csharp"   path="core/eco_lrtb.cs"             format="CS"/>
+    <eco:file id="python"   path="core/eco_lrtb.py"             format="PY"/>
+    <eco:file id="js"       path="core/eco_lrtb.js"             format="JS"/>
+    <eco:file id="html"     path="core/eco_lrtb.html"           format="HTML"/>
+    <eco:file id="php"      path="core/eco_lrtb.php"            format="PHP"/>
+    <eco:file id="css"      path="core/eco_lrtb_w3c.css"        format="CSS"/>
+    <eco:file id="nix"      path="core/eco_lrtb.nix"            format="NIX"/>
+    <eco:file id="polyfill" path="polyfill/eco_lrtb_polyfill.js" format="JS"/>
+    <eco:file id="apache"   path="apache/eco_lrtb.conf"         format="APACHE"/>
+    <eco:file id="maven"    path="maven/pom.xml"                format="XML"/>
+    <eco:file id="ftp-lib"  path="ftp/eco_ftp_library.js"       format="JS"/>
+  </eco:registry>
+
+</eco:document>
