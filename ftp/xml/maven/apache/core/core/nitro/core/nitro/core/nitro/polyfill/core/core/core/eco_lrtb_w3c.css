@@ -1,0 +1,177 @@
+@layer eco.reset, eco.tokens, eco.presets, eco.utilities, eco.components;
+
+@layer eco.tokens {
+
+  :root {
+    --eco-margin-left:    72px;
+    --eco-margin-right:   72px;
+    --eco-margin-top:     96px;
+    --eco-margin-bottom:  96px;
+
+    --eco-margin:
+      var(--eco-margin-top)
+      var(--eco-margin-right)
+      var(--eco-margin-bottom)
+      var(--eco-margin-left);
+
+    --eco-pad-left:       0px;
+    --eco-pad-right:      0px;
+    --eco-pad-top:        0px;
+    --eco-pad-bottom:     0px;
+
+    --eco-padding:
+      var(--eco-pad-top)
+      var(--eco-pad-right)
+      var(--eco-pad-bottom)
+      var(--eco-pad-left);
+
+    --eco-border-left:    0px;
+    --eco-border-right:   0px;
+    --eco-border-top:     0px;
+    --eco-border-bottom:  0px;
+
+    --eco-page-width:    816px;
+    --eco-page-height:  1056px;
+
+    --eco-content-width: calc(
+      var(--eco-page-width)
+      - var(--eco-margin-left)
+      - var(--eco-margin-right)
+    );
+    --eco-content-height: calc(
+      var(--eco-page-height)
+      - var(--eco-margin-top)
+      - var(--eco-margin-bottom)
+    );
+
+    --eco-1in:    96px;
+    --eco-1cm:    37.795px;
+    --eco-1mm:    3.7795px;
+    --eco-1pt:    1.3333px;
+    --eco-1rem:   16px;
+    --eco-1dxa:   0.06667px;
+  }
+
+}
+
+@layer eco.presets {
+
+  .eco-compact,
+  [data-eco-preset="compact"] {
+    --eco-margin-left:   48px;
+    --eco-margin-right:  48px;
+    --eco-margin-top:    48px;
+    --eco-margin-bottom: 48px;
+    --eco-pad-left:       0px;
+    --eco-pad-right:      0px;
+    --eco-pad-top:        0px;
+    --eco-pad-bottom:     0px;
+  }
+
+  .eco-standard,
+  [data-eco-preset="standard"] {
+    --eco-margin-left:   72px;
+    --eco-margin-right:  72px;
+    --eco-margin-top:    96px;
+    --eco-margin-bottom: 96px;
+  }
+
+  .eco-wide,
+  [data-eco-preset="wide"] {
+    --eco-margin-left:    96px;
+    --eco-margin-right:   96px;
+    --eco-margin-top:    144px;
+    --eco-margin-bottom: 144px;
+  }
+
+  .eco-document,
+  [data-eco-preset="document"] {
+    --eco-margin-left:   138px;
+    --eco-margin-right:  138px;
+    --eco-margin-top:    138px;
+    --eco-margin-bottom: 138px;
+  }
+
+  .eco-web,
+  [data-eco-preset="web"] {
+    --eco-margin-left:   0px;
+    --eco-margin-right:  0px;
+    --eco-margin-top:    0px;
+    --eco-margin-bottom: 0px;
+  }
+
+  @media print {
+    :root {
+      --eco-margin-left:   138px;
+      --eco-margin-right:  138px;
+      --eco-margin-top:    138px;
+      --eco-margin-bottom: 138px;
+    }
+  }
+
+}
+
+@layer eco.utilities {
+
+  .eco-m  { margin:        var(--eco-margin);        }
+  .eco-ml { margin-left:   var(--eco-margin-left);   }
+  .eco-mr { margin-right:  var(--eco-margin-right);  }
+  .eco-mt { margin-top:    var(--eco-margin-top);    }
+  .eco-mb { margin-bottom: var(--eco-margin-bottom); }
+
+  .eco-p  { padding:        var(--eco-padding);      }
+  .eco-pl { padding-left:   var(--eco-pad-left);     }
+  .eco-pr { padding-right:  var(--eco-pad-right);    }
+  .eco-pt { padding-top:    var(--eco-pad-top);      }
+  .eco-pb { padding-bottom: var(--eco-pad-bottom);   }
+
+  .eco-m-logical {
+    margin-inline-start: var(--eco-margin-left);
+    margin-inline-end:   var(--eco-margin-right);
+    margin-block-start:  var(--eco-margin-top);
+    margin-block-end:    var(--eco-margin-bottom);
+  }
+
+}
+
+@layer eco.components {
+
+  .eco-box {
+    margin-left:    var(--eco-margin-left);
+    margin-right:   var(--eco-margin-right);
+    margin-top:     var(--eco-margin-top);
+    margin-bottom:  var(--eco-margin-bottom);
+    padding-left:   var(--eco-pad-left);
+    padding-right:  var(--eco-pad-right);
+    padding-top:    var(--eco-pad-top);
+    padding-bottom: var(--eco-pad-bottom);
+    box-sizing:     border-box;
+  }
+
+  .eco-page {
+    width:          var(--eco-page-width);
+    min-height:     var(--eco-page-height);
+    margin:         0 auto;
+    background:     #ffffff;
+    box-shadow:     0 2px 16px rgba(0,0,0,0.12);
+    box-sizing:     border-box;
+    padding-left:   var(--eco-margin-left);
+    padding-right:  var(--eco-margin-right);
+    padding-top:    var(--eco-margin-top);
+    padding-bottom: var(--eco-margin-bottom);
+  }
+
+  .eco-content {
+    max-width: var(--eco-content-width);
+    margin:    0 auto;
+  }
+
+  @page {
+    size:          8.5in 11in;
+    margin-top:    1.4375in;
+    margin-right:  1.4375in;
+    margin-bottom: 1.4375in;
+    margin-left:   1.4375in;
+  }
+
+}
