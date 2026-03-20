@@ -1,0 +1,118 @@
+;;==============================================================================
+;; ECO_LRTB.FILE  --  Eco Left Right Top Bottom System
+;; Master Container Format v1.0
+;; Copyright (C) 2026 Tyler Blankenship
+;; Copyright (C) 2026 Rae
+;; Copyright (C) 2026 Lucas
+;; Copyright (C) 2026 Daloze Benoit (Eregon)
+;;==============================================================================
+
+[ECO_HEADER]
+FORMAT_ID       = ECO_LRTB
+FORMAT_VERSION  = 1.0.0
+ENCODING        = UTF-8
+ENDIANNESS      = LITTLE
+CREATED         = 2026-03-20
+AUTHORS         = Tyler Blankenship, Rae, Lucas, Eregon
+LICENSE         = MIT
+DESCRIPTION     = Ecology Left Right Top Bottom document formatting system.
+                  Provides a unified margin/padding/border model that maps
+                  identically across all target languages and document formats.
+[/ECO_HEADER]
+
+[ECO_SCHEMA]
+
+ECO_L_DEFAULT   = 72
+ECO_R_DEFAULT   = 72
+ECO_T_DEFAULT   = 96
+ECO_B_DEFAULT   = 96
+
+[PRESET:compact]
+  ECO_L = 48
+  ECO_R = 48
+  ECO_T = 48
+  ECO_B = 48
+[/PRESET]
+
+[PRESET:standard]
+  ECO_L = 72
+  ECO_R = 72
+  ECO_T = 96
+  ECO_B = 96
+[/PRESET]
+
+[PRESET:wide]
+  ECO_L = 96
+  ECO_R = 96
+  ECO_T = 144
+  ECO_B = 144
+[/PRESET]
+
+[PRESET:document]
+  ECO_L = 138
+  ECO_R = 138
+  ECO_T = 138
+  ECO_B = 138
+[/PRESET]
+
+[PRESET:web]
+  ECO_L = 0
+  ECO_R = 0
+  ECO_T = 0
+  ECO_B = 0
+[/PRESET]
+
+[ECO_UNITS]
+  PX_PER_UNIT     = 1
+  PT_PER_UNIT     = 0.75
+  MM_PER_UNIT     = 0.2646
+  IN_PER_UNIT     = 0.01042
+  DXA_PER_UNIT    = 15
+  EMU_PER_UNIT    = 9525
+  REM_SCALE       = 16
+[/ECO_UNITS]
+
+[/ECO_SCHEMA]
+
+[ECO_REGISTRY]
+  FILE_MASTER     = ECO_LRTB.FILE
+  FILE_XML        = xml/eco_lrtb.xml
+  FILE_XSD        = xml/eco_lrtb.xsd
+  FILE_C          = core/eco_lrtb.c
+  FILE_C_HEADER   = core/eco_lrtb.h
+  FILE_CS         = core/eco_lrtb.cs
+  FILE_PY         = core/eco_lrtb.py
+  FILE_JS         = core/eco_lrtb.js
+  FILE_HTM        = core/eco_lrtb.htm
+  FILE_HTML       = core/eco_lrtb.html
+  FILE_PHP        = core/eco_lrtb.php
+  FILE_CSS_W3C    = core/eco_lrtb_w3c.css
+  FILE_NIX        = core/eco_lrtb.nix
+  FILE_POLYFILL   = polyfill/eco_lrtb_polyfill.js
+  FILE_NITRO      = nitro/eco_lrtb_nitro.js
+  FILE_V8         = nitro/eco_lrtb_v8.js
+  FILE_TURBINE    = nitro/eco_lrtb_turbine.js
+  FILE_APACHE     = apache/eco_lrtb.conf
+  FILE_MAVEN_POM  = maven/pom.xml
+  FILE_FTP_LIB    = ftp/eco_ftp_library.js
+  FILE_FTP_INDEX  = ftp/eco_ftp_index.json
+  FILE_MD         = eco_lrtb_spec.md
+  FILE_TXT        = eco_lrtb_spec.txt
+[/ECO_REGISTRY]
+
+[ECO_FTP]
+  PROTOCOL        = FTP
+  HOST            = ftp.eco-lrtb.dev
+  PORT            = 21
+  PASSIVE         = true
+  BASE_PATH       = /pub/eco_lrtb/v1.0/
+  INDEX_FILE      = eco_ftp_index.json
+  AUTH_MODE       = TOKEN
+[/ECO_FTP]
+
+[ECO_MANIFEST]
+  TOTAL_FILES     = 22
+  FORMAT_HASH     = SHA256
+  SPEC_VERSION    = 1.0.0
+  COMPATIBLE_WITH = 1.x.x
+[/ECO_MANIFEST]
