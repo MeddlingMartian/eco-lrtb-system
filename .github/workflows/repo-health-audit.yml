@@ -236,7 +236,7 @@ jobs:
     if: always()
 
     steps:
-      - name: Checkout repository
+    - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Build and post report comment
@@ -298,7 +298,6 @@ jobs:
               }
               body += "\n";
             }
-
             if (warnings.length > 0) {
               body += "---\n\n### Warnings (" + warnings.length + ")\n\n";
               body += "| File | Issue | Fix |\n|------|-------|-----|\n";
@@ -343,7 +342,7 @@ jobs:
                 });
                 console.log('Updated existing audit issue');
               } else {
-                await github.rest.issues.create({
+              await github.rest.issues.create({
                   owner:  owner,
                   repo:   repo,
                   title:  'Audit Report - ' + timestamp.slice(0,10),
@@ -385,8 +384,7 @@ jobs:
           git checkout -b "${BRANCH_NAME}"
           echo "Created branch: ${BRANCH_NAME}"
           echo "BRANCH_NAME=${BRANCH_NAME}" >> $GITHUB_ENV
-
-      - name: Apply structural fixes
+          - name: Apply structural fixes
         run: |
           node << 'FIX_SCRIPT'
           const fs   = require('fs');
@@ -429,7 +427,7 @@ jobs:
             }
           }
 
-          for (const issue of report.warnings) {
+        for (const issue of report.warnings) {
             if (issue.rename) {
               const from = issue.rename.from;
               const to   = issue.rename.to;
@@ -498,7 +496,7 @@ jobs:
           process.exit(0);
           FIX_SCRIPT
 
-      - name: Commit fixes and report to fix branch
+          - name: Commit fixes and report to fix branch
         run: |
           BRANCH_NAME="${{ env.BRANCH_NAME || needs.audit.outputs.branch_name }}"
 
@@ -508,505 +506,17 @@ jobs:
             echo "# Audit Report" > .github/reports/audit-report.md
             echo "Generated: $(date)" >> .github/reports/audit-report.md
             echo "Branch: ${BRANCH_NAME}" >> .github/reports/audit-report.md
-            echo "Errors: ${{ needs.audit.outputs            { id: 'polyfill', path: 'polyfill/eco_lrtb_polyfill.js',   required: true  },
-            { id: 'nitro',    path: 'nitro/eco_lrtb_nitro.js',         required: true  },
-            { id: 'v8',       path: 'nitro/eco_lrtb_v8.js',            required: true  },
-            { id: 'turbine',  path: 'nitro/eco_lrtb_turbine.js',       required: true  },
-            { id: 'apache',   path: 'apache/eco_lrtb.conf',            required: true  },
-            { id: 'maven',    path: 'maven/pom.xml',                   required: true  },
-            { id: 'xml',      path: 'xml/eco_lrtb.xml',                required: true  },
-            { id: 'ftp-lib',  path: 'ftp/eco_ftp_library.js',          required: true  },
-            { id: 'deploy',   path: '.github/workflows/deploy-pages.yml',   required: true  },
-            { id: 'push-wf',  path: '.github/workflows/push-to-targets.yml',required: false },
-            { id: 'pull-wf',  path: '.github/workflows/pull-from-source.yml',required: false},
-          ];
-
-          // ── NAMING RULES ──────────────────────────────────────────────────────
-          const NAMING_RULES = [
-            { pattern: /\s/,           message: 'filename contains spaces'          },
-            { pattern: /[A-Z]/,        message: 'filename contains uppercase letters',
-              exempt: ['ECO_LRTB.FILE','README.md','CONTRIBUTING.md','LICENSE'] },
-            { pattern: /\.yml$/,       message: null },
-            { pattern: /\.(js|ts)$/,   message: null },
-          ];
-
-          // ── WORKFLOW NODE VERSION CHECK ────────────────────────────────────────
-          const NODE24_ENV = 'FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true';
-
-          const errors   = [];
-          const warnings = [];
-          const fixes    = [];
-          const passed   = [];
-
-          // ── 1. CHECK REGISTRY FILES EXIST AT CORRECT PATHS ───────────────────
-          for (const entry of REGISTRY) {
-            if (fs.existsSync(entry.path)) {
-              passed.push({ id: entry.id, path: entry.path,
-                            message: 'present at correct location' });
-            } else {
-              const issue = {
-                id:      entry.id,
-                path:    entry.path,
-                type:    entry.required ? 'error' : 'warning',
-                message: `${entry.required ? 'Required' : 'Optional'} file missing: ${entry.path}`,
-                fix:     `Create file at correct path: ${entry.path}`,
-              };
-              if (entry.required) errors.push(issue);
-              else                warnings.push(issue);
-            }
-          }
-
-          // ── 2. SCAN FOR MISPLACED ECO FILES ───────────────────────────────────
-          function walk(dir, depth = 0) {
-            if (depth > 5) return;
-            if (!fs.existsSync(dir)) return;
-            for (const f of fs.readdirSync(dir)) {
-              if (f.startsWith('.') || f === 'node_modules') continue;
-              const full = path.join(dir, f);
-              const stat = fs.statSync(full);
-              if (stat.isDirectory()) {
-                walk(full, depth + 1);
-              } else {
-                const rel = full.replace(/^\.\//, '');
-                // Check if an eco_ file is in a wrong folder
-                if (f.startsWith('eco_') || f === 'ECO_LRTB.FILE') {
-                  const expected = REGISTRY.find(r => path.basename(r.path) === f);
-                  if (expected && rel !== expected.path) {
-                    errors.push({
-                      id:      f,
-                      path:    rel,
-                      type:    'error',
-                      message: `File ${f} found at ${rel} but expected at ${expected.path}`,
-                      fix:     `Move ${rel} to ${expected.path}`,
-                      move:    { from: rel, to: expected.path },
-                    });
-                  }
-                }
-                // Check for spaces in filenames
-                if (/\s/.test(f)) {
-                  const fixed = f.replace(/\s+/g, '-').toLowerCase();
-                  warnings.push({
-                    id:      f,
-                    path:    rel,
-                    type:    'warning',
-                    message: `Filename contains spaces: ${f}`,
-                    fix:     `Rename to: ${fixed}`,
-                    rename:  { from: rel, to: path.join(path.dirname(rel), fixed) },
-                  });
-                }
-              }
-            }
-          }
-          walk('.');
-
-          // ── 3. WORKFLOW FILE CHECKS ───────────────────────────────────────────
-          const wfDir = '.github/workflows';
-          if (fs.existsSync(wfDir)) {
-            for (const f of fs.readdirSync(wfDir)) {
-              if (!f.endsWith('.yml') && !f.endsWith('.yaml')) continue;
-              const content = fs.readFileSync(path.join(wfDir, f), 'utf8');
-              if (!content.includes(NODE24_ENV)) {
-                warnings.push({
-                  id:      f,
-                  path:    path.join(wfDir, f),
-                  type:    'warning',
-                  message: `Workflow ${f} is missing FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true`,
-                  fix:     `Add env: FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true to ${f}`,
-                });
-              }
-              if (content.includes('actions/checkout@v3') ||
-                  content.includes('actions/checkout@v2')) {
-                warnings.push({
-                  id:      f,
-                  path:    path.join(wfDir, f),
-                  type:    'warning',
-                  message: `Workflow ${f} uses an outdated checkout action version`,
-                  fix:     `Update to actions/checkout@v4 in ${f}`,
-                });
-              }
-            }
-          }
-
-          // ── 4. CHECK FOLDER STRUCTURE ─────────────────────────────────────────
-          const REQUIRED_DIRS = ['core','nitro','polyfill','apache','maven','xml','ftp'];
-          for (const dir of REQUIRED_DIRS) {
-            if (!fs.existsSync(dir)) {
-              errors.push({
-                id:      dir,
-                path:    dir,
-                type:    'error',
-                message: `Required directory missing: ${dir}/`,
-                fix:     `Create directory ${dir}/ and populate with registry files`,
-              });
-            }
-          }
-
-          // ── 5. CHECK ECO_LRTB.FILE REGISTRY MATCHES ACTUAL FILES ─────────────
-          if (fs.existsSync('ECO_LRTB.FILE')) {
-            const masterContent = fs.readFileSync('ECO_LRTB.FILE', 'utf8');
-            for (const entry of REGISTRY) {
-              if (!masterContent.includes(path.basename(entry.path))) {
-                warnings.push({
-                  id:      entry.id,
-                  path:    'ECO_LRTB.FILE',
-                  type:    'warning',
-                  message: `ECO_LRTB.FILE registry does not reference: ${entry.path}`,
-                  fix:     `Add ${entry.path} to [ECO_REGISTRY] block in ECO_LRTB.FILE`,
-                });
-              }
-            }
-          }
-
-          // ── BUILD REPORT ──────────────────────────────────────────────────────
-          const timestamp  = new Date().toISOString();
-          const branchName = `audit/fix-${timestamp.slice(0,10)}-${
-            Math.random().toString(36).slice(2,7)}`;
-
-          const report = {
-            timestamp,
-            branchName,
-            summary: {
-              errors:   errors.length,
-              warnings: warnings.length,
-              passed:   passed.length,
-            },
-            errors,
-            warnings,
-            passed,
-          };
-
-          // Write report JSON for next job
-          fs.mkdirSync('.github/reports', { recursive: true });
-          fs.writeFileSync('.github/reports/latest.json',
-            JSON.stringify(report, null, 2));
-
-          const outputFile = process.env.GITHUB_OUTPUT;
-          const out = (k, v) => fs.appendFileSync(outputFile,
-            k + "=" + (typeof v === "string" ? v : JSON.stringify(v)) + "\n");
-    
-          out('has_errors',    errors.length > 0 ? 'true' : 'false');
-          out('error_count',   String(errors.length));
-          out('warning_count', String(warnings.length));
-          out('branch_name',   branchName);
-          out('report_json',   JSON.stringify(report).replace(/\n/g, ''));
-
-          console.log(`Audit complete: ${errors.length} errors, ${warnings.length} warnings, ${passed.length} passed`);
-          process.exit(0);
-          AUDIT_SCRIPT
-
-  # ── JOB 2: GENERATE REPORT AND POST COMMENT ───────────────────────────────────
-  report:
-    name: Post Audit Report as Comment
-    runs-on: ubuntu-latest
-    needs: audit
-    continue-on-error: true
-    if: always()
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Build and post report comment
-        uses: actions/github-script@v7
-        continue-on-error: true
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs   = require('fs');
-            const path = require('path');
-
-            // Read audit report if it exists
-            let report = null;
-            try {
-              report = JSON.parse(
-                fs.readFileSync('.github/reports/latest.json', 'utf8')
-              );
-            } catch(e) {
-              report = {
-                timestamp:  new Date().toISOString(),
-                branchName: 'audit/fix-pending',
-                summary:    { errors: 0, warnings: 0, passed: 0 },
-                errors:     [],
-                warnings:   [],
-                passed:     [],
-              };
-            }
-
-            const { errors, warnings, passed, summary, timestamp, branchName } = report;
-            const repo   = context.repo;
-            const runUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`;
-            const branchUrl = `https://github.com/${repo.owner}/${repo.repo}/tree/${branchName}`;
-            const statusIcon = errors.length === 0 ? '✅' : '⚠️';
-
-            // Build markdown report
-            let body = `## ${statusIcon} Repository Health Audit Report\n\n`;
-            body += `**Run:** [View full workflow log](${runUrl})\n`;
-            body += `**Timestamp:** ${timestamp}\n`;
-            body += `**Fix branch:** [\`${branchName}\`](${branchUrl})\n\n`;
-            body += `---\n\n`;
-
-            // Summary table
-            body += `### Summary\n\n`;
-            body += `| Status | Count |\n|--------|-------|\n`;
-            body += `| ✅ Passed  | ${summary.passed}   |\n`;
-            body += `| ⚠️ Warnings | ${summary.warnings} |\n`;
-            body += `| ❌ Errors  | ${summary.errors}   |\n\n`;
-
-            // Errors section
-            if (errors.length > 0) {
-              body += `---\n\n### ❌ Errors (${errors.length})\n\n`;
-              body += `| File | Issue | Suggested Fix |\n|------|-------|---------------|\n`;
-              for (const e of errors) {
-                body += `| \`${e.path}\` | ${e.message} | ${e.fix} |\n`;
-              }
-              body += `\n`;
-            }
-
-            // Warnings section
-            if (warnings.length > 0) {
-              body += `---\n\n### ⚠️ Warnings (${warnings.length})\n\n`;
-              body += `| File | Issue | Suggested Fix |\n|------|-------|---------------|\n`;
-              for (const w of warnings) {
-                body += `| \`${w.path}\` | ${w.message} | ${w.fix} |\n`;
-              }
-              body += `\n`;
-            }
-
-            // Passed section
-            if (passed.length > 0) {
-              body += `---\n\n### ✅ Passed (${passed.length})\n\n`;
-              body += `<details><summary>View all passing checks</summary>\n\n`;
-              body += `| File | Status |\n|------|--------|\n`;
-              for (const p of passed) {
-                body += `| \`${p.path}\` | ${p.message} |\n`;
-              }
-              body += `\n</details>\n\n`;
-            }
-
-            // Fix branch info
-            body += `---\n\n### Fix Branch\n\n`;
-            body += `A fix branch has been created at [\`${branchName}\`](${branchUrl}).\n\n`;
-            body += `This branch:\n`;
-            body += `- Contains the audit report at \`.github/reports/audit-report.md\`\n`;
-            body += `- Contains suggested fixes as individual commits\n`;
-            body += `- Can be merged into \`main\` independently\n`;
-            body += `- Can be extended with new files without affecting \`main\`\n`;
-            body += `- Is fully pullable and mergeable when ready\n\n`;
-            body += `To merge fixes when ready:\n`;
-            body += `\`\`\`bash\ngit fetch origin ${branchName}\n`;
-            body += `git checkout main\n`;
-            body += `git merge origin/${branchName} --no-ff\n`;
-            body += `git push origin main\n\`\`\`\n`;
-
-            // Post as commit comment
-            try {
-              await github.rest.repos.createCommitComment({
-                owner:      repo.owner,
-                repo:       repo.repo,
-                commit_sha: context.sha,
-                body,
-              });
-              console.log('Posted audit report as commit comment');
-            } catch(e) {
-              console.log('Could not post commit comment:', e.message);
-            }
-
-            // Also create/update an issue for persistent tracking
-            try {
-              const issues = await github.rest.issues.listForRepo({
-                owner:  repo.owner,
-                repo:   repo.repo,
-                labels: 'audit-report',
-                state:  'open',
-              });
-
-              const issueBody = body + `\n\n---\n*Auto-generated by repo-health-audit.yml*`;
-
-              if (issues.data.length > 0) {
-                await github.rest.issues.createComment({
-                  owner:      repo.owner,
-                  repo:       repo.repo,
-                  issue_number: issues.data[0].number,
-                  body:       issueBody,
-                });
-                console.log('Updated existing audit issue');
-              } else {
-                await github.rest.issues.create({
-                  owner:  repo.owner,
-                  repo:   repo.repo,
-                  title:  `Audit Report - ${timestamp.slice(0,10)}`,
-                  body:   issueBody,
-                  labels: ['audit-report'],
-                });
-                console.log('Created new audit issue');
-              }
-            } catch(e) {
-              console.log('Could not create/update issue:', e.message);
-            }
-
-  # ── JOB 3: CREATE FIX BRANCH ──────────────────────────────────────────────────
-  create-fix-branch:
-    name: Create Fix Branch with Corrections
-    runs-on: ubuntu-latest
-    needs: audit
-    continue-on-error: true
-    if: needs.audit.outputs.has_errors == 'true' || always()
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Configure git identity
-        run: |
-          git config user.name  "eco-lrtb-audit-bot"
-          git config user.email "audit-bot@eco-lrtb-system"
-
-      - name: Create fix branch from current HEAD
-        run: |
-          BRANCH_NAME="${{ needs.audit.outputs.branch_name }}"
-          if [ -z "${BRANCH_NAME}" ]; then
-            BRANCH_NAME="audit/fix-$(date +%Y-%m-%d)-$(head /dev/urandom | tr -dc a-z0-9 | head -c 5)"
-            echo "Branch name was empty, generated fallback: ${BRANCH_NAME}"
+            echo "Errors: ${{ needs.audit.outputs.error_count }}" >> .github/reports/audit-report.md
+            echo "Warnings: ${{ needs.audit.outputs.warning_count }}" >> .github/reports/audit-report.md
           fi
-          git checkout -b "${BRANCH_NAME}"
-          echo "Created branch: ${BRANCH_NAME}"
-          echo "BRANCH_NAME=${BRANCH_NAME}" >> $GITHUB_ENV
-          
-      - name: Apply structural fixes
-        run: |
-          node << 'FIX_SCRIPT'
-          const fs   = require('fs');
-          const path = require('path');
 
-          let report = null;
-          try {
-            report = JSON.parse(
-              fs.readFileSync('.github/reports/latest.json','utf8')
-            );
-          } catch(e) {
-            console.log('No report found, skipping fixes');
-            process.exit(0);
-          }
+          if [ ! -f ".github/reports/fixes-applied.json" ]; then
+            echo '{"timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","fixes":[]}' > .github/reports/fixes-applied.json
+          fi
 
-          const fixes_applied = [];
-
-          // Fix 1: Create missing required directories
-          const REQUIRED_DIRS = [
-            'core','nitro','polyfill','apache','maven','xml','ftp',
-            '.github/reports',
-          ];
-          for (const dir of REQUIRED_DIRS) {
-            if (!fs.existsSync(dir)) {
-              fs.mkdirSync(dir, { recursive: true });
-              // Add a .gitkeep so the empty dir is tracked
-              fs.writeFileSync(path.join(dir, '.gitkeep'), '');
-              fixes_applied.push(`Created missing directory: ${dir}/`);
-            }
-          }
-
-          // Fix 2: Move misplaced files
-          for (const issue of report.errors) {
-            if (issue.move) {
-              const { from, to } = issue.move;
-              if (fs.existsSync(from)) {
-                fs.mkdirSync(path.dirname(to), { recursive: true });
-                fs.copyFileSync(from, to);
-                fs.unlinkSync(from);
-                fixes_applied.push(`Moved ${from} to ${to}`);
-              }
-            }
-          }
-
-          // Fix 3: Rename files with spaces
-          for (const issue of report.warnings) {
-            if (issue.rename) {
-              const { from, to } = issue.rename;
-              if (fs.existsSync(from)) {
-                fs.mkdirSync(path.dirname(to), { recursive: true });
-                fs.renameSync(from, to);
-                fixes_applied.push(`Renamed ${from} to ${to}`);
-              }
-            }
-          }
-
-          // Write the human-readable report to the fix branch
-          fs.mkdirSync('.github/reports', { recursive: true });
-
-          const ts     = report.timestamp;
-          const errors = report.errors;
-          const warns  = report.warnings;
-          const passed = report.passed;
-
-          let md  = `# Eco_L_R_T_B_System — Audit Report\n\n`;
-          md += `**Generated:** ${ts}\n\n`;
-          md += `**Fix branch:** \`${report.branchName}\`\n\n`;
-          md += `---\n\n`;
-          md += `## Summary\n\n`;
-          md += `| Status | Count |\n|--------|-------|\n`;
-          md += `| Passed   | ${passed.length}  |\n`;
-          md += `| Warnings | ${warns.length}   |\n`;
-          md += `| Errors   | ${errors.length}  |\n\n`;
-
-          if (errors.length > 0) {
-            md += `---\n\n## Errors\n\n`;
-            for (const e of errors) {
-              md += `### ${e.path}\n- **Issue:** ${e.message}\n- **Fix:** ${e.fix}\n\n`;
-            }
-          }
-
-          if (warns.length > 0) {
-            md += `---\n\n## Warnings\n\n`;
-            for (const w of warns) {
-              md += `### ${w.path}\n- **Issue:** ${w.message}\n- **Fix:** ${w.fix}\n\n`;
-            }
-          }
-
-          if (fixes_applied.length > 0) {
-            md += `---\n\n## Fixes Applied in This Branch\n\n`;
-            for (const f of fixes_applied) {
-              md += `- ${f}\n`;
-            }
-            md += `\n`;
-          }
-
-          md += `---\n\n## Branch Purpose\n\n`;
-          md += `This branch was created automatically by \`repo-health-audit.yml\`.\n\n`;
-          md += `It serves as an isolated workspace where:\n\n`;
-          md += `- Identified issues are corrected without touching \`main\`\n`;
-          md += `- New files can be added alongside the corrections\n`;
-          md += `- Further development can proceed independently\n`;
-          md += `- Changes can be merged to \`main\` via pull request when ready\n\n`;
-          md += `## How to Use This Branch\n\n`;
-          md += '```bash\n';
-          md += `git fetch origin ${report.branchName}\n`;
-          md += `git checkout ${report.branchName}\n`;
-          md += `# add new files, build on corrections\n`;
-          md += `git push origin ${report.branchName}\n`;
-          md += '```\n\n';
-          md += `Then open a pull request from \`${report.branchName}\` into \`main\`.\n`;
-
-          fs.writeFileSync('.github/reports/audit-report.md', md);
-          console.log('Wrote audit-report.md');
-
-          // Write fixes summary
-          fs.writeFileSync('.github/reports/fixes-applied.json',
-            JSON.stringify({ timestamp: ts, fixes: fixes_applied }, null, 2));
-
-          console.log(`Applied ${fixes_applied.length} fixes`);
-          process.exit(0);
-          FIX_SCRIPT
-
-      - name: Commit fixes and report to fix branch
-        run: |
-          BRANCH_NAME="${{ needs.audit.outputs.branch_name }}"
-
-          git add .github/reports/
+          git add .github/reports/ || true
           git add -A
 
-          # Only commit if there are staged changes
           if ! git diff --staged --quiet; then
             git commit -m "audit: apply structural fixes and generate report
 
@@ -1026,53 +536,51 @@ jobs:
             git push origin "${BRANCH_NAME}"
             echo "Pushed fix branch: ${BRANCH_NAME}"
           else
-            # Push the branch even with no changes so the report link works
             git push origin "${BRANCH_NAME}"
             echo "No structural fixes needed, branch pushed with report only"
           fi
 
-      - name: Open pull request for fix branch
+          - name: Open pull request for fix branch
         uses: actions/github-script@v7
         continue-on-error: true
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const branchName  = `${{ needs.audit.outputs.branch_name }}`;
-            const errorCount  = `${{ needs.audit.outputs.error_count }}`;
-            const warnCount   = `${{ needs.audit.outputs.warning_count }}`;
-            const runUrl      = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const reportUrl   = `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${branchName}/.github/reports/audit-report.md`;
+            const branchName = "${{ env.BRANCH_NAME || needs.audit.outputs.branch_name }}";
+            const errorCount = "${{ needs.audit.outputs.error_count }}";
+            const warnCount  = "${{ needs.audit.outputs.warning_count }}";
+            const owner      = context.repo.owner;
+            const repo       = context.repo.repo;
+            const runId      = context.runId;
+
+            const runUrl    = "https://github.com/" + owner + "/" + repo + "/actions/runs/" + runId;
+            const reportUrl = "https://github.com/" + owner + "/" + repo + "/blob/" + branchName + "/.github/reports/audit-report.md";
+
+            let body  = "## Automated Repository Audit Fix\n\n";
+            body += "**Audit run:** [View log](" + runUrl + ")\n";
+            body += "**Full report:** [audit-report.md](" + reportUrl + ")\n\n";
+            body += "### What this PR contains\n\n";
+            body += "- " + errorCount + " error(s) corrected\n";
+            body += "- " + warnCount  + " warning(s) flagged\n";
+            body += "- Audit report added at `.github/reports/audit-report.md`\n";
+            body += "- Fix summary at `.github/reports/fixes-applied.json`\n\n";
+            body += "### This branch is safe to extend\n\n";
+            body += "You can add new files to this branch before merging.\n";
+            body += "It will not conflict with main because all corrections\n";
+            body += "move files into their correct registry locations.\n";
 
             try {
               await github.rest.pulls.create({
-                owner: context.repo.owner,
-                repo:  context.repo.repo,
-                title: `audit: structural fixes — ${new Date().toISOString().slice(0,10)}`,
+                owner: owner,
+                repo:  repo,
+                title: "audit: structural fixes -- " + new Date().toISOString().slice(0,10),
                 head:  branchName,
-                base:  'main',
-                body: `## Automated Repository Audit Fix\n\n` +
-                  `**Audit run:** [View log](${runUrl})\n` +
-                  `**Full report:** [audit-report.md](${reportUrl})\n\n` +
-                  `### What this PR contains\n\n` +
-                  `- ${errorCount} error(s) corrected\n` +
-                  `- ${warnCount} warning(s) flagged\n` +
-                  `- Audit report added at \`.github/reports/audit-report.md\`\n` +
-                  `- Fix summary at \`.github/reports/fixes-applied.json\`\n\n` +
-                  `### This branch is safe to extend\n\n` +
-                  `You can add new files to this branch before merging.\n` +
-                  `It will not conflict with \`main\` because all corrections\n` +
-                  `move files *into* their correct registry locations.\n\n` +
-                  `### To merge when ready\n\n` +
-                  '```bash\n' +
-                  `git fetch origin ${branchName}\n` +
-                  `git checkout main\n` +
-                  `git merge origin/${branchName} --no-ff\n` +
-                  `git push origin main\n` +
-                  '```\n',
+                base:  "main",
+                body:  body,
                 draft: false,
                 maintainer_can_modify: true,
               });
               console.log('Pull request created');
-            } catch(e) {
-              console.log('PR already exists or could not be created:', e.message);
+            } catch(prError) {
+              console.log('PR already exists or could not be created: ' + prError.message);
             }
