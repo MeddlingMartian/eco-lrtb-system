@@ -1,0 +1,177 @@
+name: ATKMA Repository Path Cleanup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  cleanup:
+    name: Flatten and Correct All File Paths
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "atkma-cleanup-bot"
+          git config user.email "cleanup-bot@eco-lrtb-system"
+
+      - name: Scan and correct all file paths
+        run: |
+          node << 'CLEANUP_SCRIPT'
+          const fs   = require('fs');
+          const path = require('path');
+
+          const CORRECT_PATHS = [
+            'ECO_LRTB.FILE',
+            'eco_lrtb_spec.txt',
+            'eco_lrtb_spec.md',
+            'deno.json',
+            'LICENSE_TOADSTOOL.md',
+            'CONTRIBUTING.md',
+            'core/eco_lrtb.h',
+            'core/eco_lrtb.c',
+            'core/eco_lrtb.cs',
+            'core/eco_lrtb.py',
+            'core/eco_lrtb.js',
+            'core/eco_lrtb.html',
+            'core/eco_lrtb.php',
+            'core/eco_lrtb_w3c.css',
+            'core/eco_lrtb.nix',
+            'nitro/eco_lrtb_nitro.js',
+            'nitro/eco_lrtb_v8.js',
+            'nitro/eco_lrtb_turbine.js',
+            'polyfill/eco_lrtb_polyfill.js',
+            'apache/eco_lrtb.conf',
+            'maven/pom.xml',
+            'xml/eco_lrtb.xml',
+            'ftp/eco_ftp_library.js',
+            'atkma/atkma.spec',
+            'atkma/atkma.registry.json',
+            'atkma/atkma_transpiler.js',
+            'atkma/binary/atkma_binary_index.txt',
+            'atkma/binary/atkma_binary_values.txt',
+            'atkma/binary/atkma_binary_stream.txt',
+            '.github/workflows/deploy-pages.yml',
+            '.github/workflows/push-to-targets.yml',
+            '.github/workflows/pull-from-source.yml',
+            '.github/workflows/repo-health-audit.yml',
+            '.github/workflows/atkma-deno-transpiler.yml',
+            '.github/workflows/atkma-path-cleanup.yml',
+          ];
+
+          const CORRECT_DIRS = [
+            'core', 'nitro', 'polyfill', 'apache',
+            'maven', 'xml', 'ftp', 'atkma',
+            'atkma/binary', 'atkma/exchanges',
+            '.github/workflows', '.github/reports',
+          ];
+
+          const moves   = [];
+          const deletes = [];
+
+          // Build a map of filename -> correct path
+          const correctMap = {};
+          for (const p of CORRECT_PATHS) {
+            const base = path.basename(p);
+            if (!correctMap[base]) correctMap[base] = [];
+            correctMap[base].push(p);
+          }
+
+          // Walk entire repo
+          function walk(dir, depth) {
+            if (depth > 10) return;
+            if (!fs.existsSync(dir)) return;
+            for (const f of fs.readdirSync(dir)) {
+              if (f === '.git') continue;
+              const full = path.join(dir, f);
+              const rel  = full.replace(/^\.\//, '');
+              const stat = fs.statSync(full);
+
+              if (stat.isDirectory()) {
+                walk(full, depth + 1);
+              } else {
+                const base = path.basename(f);
+                const correctList = correctMap[base];
+
+                if (correctList && correctList.length === 1) {
+                  const correct = correctList[0];
+                  if (rel !== correct) {
+                    // File exists at wrong location
+                    moves.push({ from: rel, to: correct });
+                  }
+                }
+              }
+            }
+          }
+
+          walk('.', 0);
+
+          // Apply moves
+          for (const move of moves) {
+            console.log('MOVING: ' + move.from + ' -> ' + move.to);
+            fs.mkdirSync(path.dirname(move.to), { recursive: true });
+            fs.copyFileSync(move.from, move.to);
+            fs.unlinkSync(move.from);
+          }
+
+          // Remove empty directories left behind
+          function removeEmptyDirs(dir, depth) {
+            if (depth > 10) return;
+            if (!fs.existsSync(dir)) return;
+            if (dir === '.' || dir === '.git') return;
+
+            const entries = fs.readdirSync(dir).filter(f => f !== '.git');
+
+            for (const entry of entries) {
+              const full = path.join(dir, entry);
+              if (fs.statSync(full).isDirectory()) {
+                removeEmptyDirs(full, depth + 1);
+              }
+            }
+
+            const remaining = fs.readdirSync(dir).filter(f => f !== '.git');
+            const isExpectedDir = CORRECT_DIRS.some(d =>
+              d === dir || dir.startsWith(d + '/')
+            );
+
+            if (remaining.length === 0 && !isExpectedDir && dir !== '.') {
+              console.log('REMOVING empty dir: ' + dir);
+              fs.rmdirSync(dir);
+            }
+          }
+          removeEmptyDirs('.', 0);
+
+          console.log('Moves applied: ' + moves.length);
+          console.log('Cleanup complete');
+          process.exit(0);
+          CLEANUP_SCRIPT
+
+      - name: Commit corrected file structure
+        run: |
+          git add -A
+
+          if ! git diff --staged --quiet; then
+            git commit -m "cleanup: correct all file paths to registry locations
+
+          All files moved to their correct registry locations.
+          Nested duplicate paths removed.
+          Empty directories cleaned up.
+
+          Repository structure now matches ECO_LRTB registry exactly."
+
+            git push origin main
+            echo "Pushed corrected file structure to main"
+          else
+            echo "No path corrections needed"
+          fi
