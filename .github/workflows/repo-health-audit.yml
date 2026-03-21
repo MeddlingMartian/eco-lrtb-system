@@ -13,7 +13,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: "audit"
+  group: "audit-health"
   cancel-in-progress: false
 
 env:

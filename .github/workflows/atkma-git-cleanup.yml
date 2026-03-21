@@ -6,6 +6,10 @@ on:
 permissions:
   contents: write
 
+
+concurrency:
+ group: "atkma-git-clean"
+ cancel-in-progress: false
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
