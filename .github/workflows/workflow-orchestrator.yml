@@ -527,7 +527,8 @@ jobs:
             echo "All workflows already have unique concurrency groups"
           fi
 
-          report:
+      
+  report:
     name: Post Orchestration Report
     runs-on: ubuntu-latest
     needs: [self-heal, review, coordinate]
