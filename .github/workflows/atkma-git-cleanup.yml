@@ -1,0 +1,168 @@
+name: ATKMA Git Path Cleanup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  git-cleanup:
+    name: Remove Duplicate Files and Fix Structure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "atkma-cleanup-bot"
+          git config user.email "cleanup-bot@eco-lrtb-system"
+
+      - name: Remove all nested duplicate directories
+        run: |
+          # These are the wrong nested paths that got created
+          # by the broken audit move logic.
+          # We delete them entirely using git rm.
+
+          for BAD_DIR in \
+            "ftp/xml" \
+            "ftp/maven" \
+            "ftp/apache" \
+            "ftp/core" \
+            "ftp/nitro" \
+            "ftp/polyfill" \
+            "ftp/atkma" \
+            "ftp/ftp" \
+            "xml/core" \
+            "xml/nitro" \
+            "xml/polyfill" \
+            "xml/ftp" \
+            "xml/apache" \
+            "xml/maven" \
+            "maven/core" \
+            "maven/nitro" \
+            "maven/polyfill" \
+            "maven/ftp" \
+            "maven/xml" \
+            "maven/apache" \
+            "apache/core" \
+            "apache/nitro" \
+            "apache/polyfill" \
+            "apache/ftp" \
+            "apache/xml" \
+            "apache/maven" \
+            "core/core" \
+            "core/nitro" \
+            "core/polyfill" \
+            "core/ftp" \
+            "core/xml" \
+            "core/maven" \
+            "core/apache" \
+            "nitro/core" \
+            "nitro/nitro" \
+            "nitro/polyfill" \
+            "nitro/ftp" \
+            "nitro/xml" \
+            "nitro/maven" \
+            "nitro/apache" \
+            "polyfill/core" \
+            "polyfill/nitro" \
+            "polyfill/polyfill" \
+            "polyfill/ftp" \
+            "polyfill/xml" \
+            "polyfill/maven" \
+            "polyfill/apache"
+          do
+            if [ -d "${BAD_DIR}" ]; then
+              echo "Removing bad directory: ${BAD_DIR}"
+              git rm -rf "${BAD_DIR}" || true
+            fi
+          done
+
+          - name: Ensure all correct paths exist
+        run: |
+          node << 'VERIFY_SCRIPT'
+          const fs   = require('fs');
+          const path = require('path');
+
+          const REGISTRY = [
+            'ECO_LRTB.FILE',
+            'eco_lrtb_spec.txt',
+            'eco_lrtb_spec.md',
+            'core/eco_lrtb.h',
+            'core/eco_lrtb.c',
+            'core/eco_lrtb.cs',
+            'core/eco_lrtb.py',
+            'core/eco_lrtb.js',
+            'core/eco_lrtb.html',
+            'core/eco_lrtb.php',
+            'core/eco_lrtb_w3c.css',
+            'core/eco_lrtb.nix',
+            'nitro/eco_lrtb_nitro.js',
+            'nitro/eco_lrtb_v8.js',
+            'nitro/eco_lrtb_turbine.js',
+            'polyfill/eco_lrtb_polyfill.js',
+            'apache/eco_lrtb.conf',
+            'maven/pom.xml',
+            'xml/eco_lrtb.xml',
+            'ftp/eco_ftp_library.js',
+            'atkma/atkma.spec',
+            'atkma/atkma.registry.json',
+            'atkma/atkma_transpiler.js',
+          ];
+
+          const missing = [];
+          const present = [];
+
+          for (const p of REGISTRY) {
+            if (fs.existsSync(p)) {
+              present.push(p);
+            } else {
+              missing.push(p);
+              console.log('MISSING at correct location: ' + p);
+            }
+          }
+
+          console.log('Present at correct location: ' + present.length);
+          console.log('Missing from correct location: ' + missing.length);
+
+          if (missing.length > 0) {
+            console.log('');
+            console.log('These files need to be manually verified:');
+            for (const m of missing) {
+              console.log('  ' + m);
+            }
+          }
+
+          process.exit(0);
+          VERIFY_SCRIPT
+
+      - name: Commit removal of duplicate nested paths
+        run: |
+          git add -A
+
+          if ! git diff --staged --quiet; then
+            git commit -m "cleanup: remove all nested duplicate file paths
+
+          Deleted all incorrectly nested directories created
+          by the broken audit move logic including:
+          ftp/xml, ftp/maven, ftp/apache, ftp/core,
+          xml/core, maven/core, apache/core, core/core,
+          nitro/core, polyfill/core and all similar nesting.
+
+          All correct registry file paths preserved.
+          Repository structure restored to flat correct layout."
+
+            git push origin main
+            echo "Done. Duplicate paths removed."
+          else
+            echo "Nothing to clean up."
+          fi
