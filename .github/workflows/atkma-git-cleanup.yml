@@ -28,66 +28,29 @@ jobs:
 
       - name: Remove all nested duplicate directories
         run: |
-          # These are the wrong nested paths that got created
-          # by the broken audit move logic.
-          # We delete them entirely using git rm.
-
           for BAD_DIR in \
-            "ftp/xml" \
-            "ftp/maven" \
-            "ftp/apache" \
-            "ftp/core" \
-            "ftp/nitro" \
-            "ftp/polyfill" \
-            "ftp/atkma" \
-            "ftp/ftp" \
-            "xml/core" \
-            "xml/nitro" \
-            "xml/polyfill" \
-            "xml/ftp" \
-            "xml/apache" \
-            "xml/maven" \
-            "maven/core" \
-            "maven/nitro" \
-            "maven/polyfill" \
-            "maven/ftp" \
-            "maven/xml" \
-            "maven/apache" \
-            "apache/core" \
-            "apache/nitro" \
-            "apache/polyfill" \
-            "apache/ftp" \
-            "apache/xml" \
-            "apache/maven" \
-            "core/core" \
-            "core/nitro" \
-            "core/polyfill" \
-            "core/ftp" \
-            "core/xml" \
-            "core/maven" \
-            "core/apache" \
-            "nitro/core" \
-            "nitro/nitro" \
-            "nitro/polyfill" \
-            "nitro/ftp" \
-            "nitro/xml" \
-            "nitro/maven" \
-            "nitro/apache" \
-            "polyfill/core" \
-            "polyfill/nitro" \
-            "polyfill/polyfill" \
-            "polyfill/ftp" \
-            "polyfill/xml" \
-            "polyfill/maven" \
-            "polyfill/apache"
+            "ftp/xml" "ftp/maven" "ftp/apache" "ftp/core" \
+            "ftp/nitro" "ftp/polyfill" "ftp/atkma" "ftp/ftp" \
+            "xml/core" "xml/nitro" "xml/polyfill" "xml/ftp" \
+            "xml/apache" "xml/maven" \
+            "maven/core" "maven/nitro" "maven/polyfill" \
+            "maven/ftp" "maven/xml" "maven/apache" \
+            "apache/core" "apache/nitro" "apache/polyfill" \
+            "apache/ftp" "apache/xml" "apache/maven" \
+            "core/core" "core/nitro" "core/polyfill" \
+            "core/ftp" "core/xml" "core/maven" "core/apache" \
+            "nitro/core" "nitro/nitro" "nitro/polyfill" \
+            "nitro/ftp" "nitro/xml" "nitro/maven" "nitro/apache" \
+            "polyfill/core" "polyfill/nitro" "polyfill/polyfill" \
+            "polyfill/ftp" "polyfill/xml" "polyfill/maven" "polyfill/apache"
           do
-            if [ -d "${BAD_DIR}" ]; then
+                      if [ -d "${BAD_DIR}" ]; then
               echo "Removing bad directory: ${BAD_DIR}"
               git rm -rf "${BAD_DIR}" || true
             fi
           done
 
-          - name: Ensure all correct paths exist
+      - name: Verify correct paths exist
         run: |
           node << 'VERIFY_SCRIPT'
           const fs   = require('fs');
@@ -127,21 +90,12 @@ jobs:
               present.push(p);
             } else {
               missing.push(p);
-              console.log('MISSING at correct location: ' + p);
+              console.log('MISSING: ' + p);
             }
           }
 
-          console.log('Present at correct location: ' + present.length);
-          console.log('Missing from correct location: ' + missing.length);
-
-          if (missing.length > 0) {
-            console.log('');
-            console.log('These files need to be manually verified:');
-            for (const m of missing) {
-              console.log('  ' + m);
-            }
-          }
-
+          console.log('Present: ' + present.length + ' / ' + REGISTRY.length);
+          console.log('Missing: ' + missing.length);
           process.exit(0);
           VERIFY_SCRIPT
 
@@ -152,14 +106,9 @@ jobs:
           if ! git diff --staged --quiet; then
             git commit -m "cleanup: remove all nested duplicate file paths
 
-          Deleted all incorrectly nested directories created
-          by the broken audit move logic including:
-          ftp/xml, ftp/maven, ftp/apache, ftp/core,
-          xml/core, maven/core, apache/core, core/core,
-          nitro/core, polyfill/core and all similar nesting.
-
+          Deleted all incorrectly nested directories.
           All correct registry file paths preserved.
-          Repository structure restored to flat correct layout."
+          Repository structure restored to correct flat layout."
 
             git push origin main
             echo "Done. Duplicate paths removed."
