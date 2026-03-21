@@ -1,0 +1,109 @@
+{
+  "registry_version": "1.0.0",
+  "license": "Toadstool Open Source Software License v1.0.0",
+  "copyright": "2026 Tyler Blankenship",
+  "description": "ATKMA pattern registry — maps disallowed patterns to supplemental language exchanges",
+
+  "targets": {
+    "deno":        { "strict_mode": true,  "no_var": true, "typed_catch": true },
+    "deno-strict": { "strict_mode": true,  "no_var": true, "typed_catch": true },
+    "node":        { "strict_mode": false, "no_var": false,"typed_catch": false },
+    "browser":     { "strict_mode": false, "no_var": false,"typed_catch": false }
+  },
+
+  "patterns": [
+
+    {
+      "id":          "var_declaration",
+      "pattern":     "\\bvar\\s+",
+      "targets":     ["deno", "deno-strict"],
+      "source_lang": "javascript",
+      "supp_lang":   "typescript",
+      "exchange_fn": "exchange_var",
+      "description": "var is not allowed in Deno strict mode",
+      "supplement_rules": [
+        {
+          "condition": "variable is never reassigned in scope",
+          "replacement": "const"
+        },
+        {
+          "condition": "variable is reassigned after declaration",
+          "replacement": "let"
+        }
+      ]
+    },
+
+    {
+      "id":          "bare_catch_e",
+      "pattern":     "catch\\s*\\(\\s*e\\s*\\)",
+      "targets":     ["deno", "deno-strict"],
+      "source_lang": "javascript",
+      "supp_lang":   "typescript",
+      "exchange_fn": "exchange_catch_e_used",
+      "description": "Bare catch(e) with e used — requires typed parameter in Deno",
+      "supplement_rules": [
+        {
+          "condition": "e is used inside catch block",
+          "replacement": "catch(error: unknown) { const message = error instanceof Error ? error.message : String(error);"
+        }
+      ]
+    },
+
+    {
+      "id":          "empty_catch_e",
+      "pattern":     "catch\\s*\\(\\s*e\\s*\\)\\s*\\{\\s*\\}",
+      "targets":     ["deno", "deno-strict"],
+      "source_lang": "javascript",
+      "supp_lang":   "typescript",
+      "exchange_fn": "exchange_catch_e_unused",
+      "description": "Empty catch(e) where e is never used",
+      "supplement_rules": [
+        {
+          "condition": "e is never referenced inside catch block",
+          "replacement": "catch { }"
+        }
+      ]
+    },
+
+    {
+      "id":          "var_for_loop",
+      "pattern":     "for\\s*\\(\\s*var\\s+",
+      "targets":     ["deno", "deno-strict"],
+      "source_lang": "javascript",
+      "supp_lang":   "typescript",
+      "exchange_fn": "exchange_var_for",
+      "description": "var in for loop — exchange with let for block scoping",
+      "supplement_rules": [
+        {
+          "condition": "loop variable",
+          "replacement": "let"
+        }
+      ]
+    },
+
+    {
+      "id":          "implicit_any_e",
+      "pattern":     "catch\\s*\\(\\s*e\\s*\\)\\s*\\{[^}]*\\be\\b",
+      "targets":     ["deno", "deno-strict"],
+      "source_lang": "javascript",
+      "supp_lang":   "typescript",
+      "exchange_fn": "exchange_implicit_any",
+      "description": "catch(e) with implicit any type — Deno requires explicit type",
+      "supplement_rules": [
+        {
+          "condition": "accessing e.message",
+          "replacement": "error instanceof Error ? error.message : String(error)"
+        },
+        {
+          "condition": "accessing e.stack",
+          "replacement": "error instanceof Error ? error.stack : undefined"
+        },
+        {
+          "condition": "passing e to console",
+          "replacement": "String(error)"
+        }
+      ]
+    }
+
+  ]
+}
