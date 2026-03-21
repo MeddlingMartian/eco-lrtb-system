@@ -1,0 +1,50 @@
+ATKMA BINARY FOLDER INDEX
+Toadstool Open Source Software License v1.0.0
+Copyright (C) 2026 Tyler Blankenship
+============================================================
+
+FOLDER: atkma/binary/
+
+FILES:
+
+  atkma_binary_values.txt
+    Character-level binary value table for every unique
+    character in atkma.spec. Includes keyword encodings,
+    step opcodes, and agreement state flags.
+
+  atkma_binary_stream.txt
+    Full UTF-8 byte stream of atkma.spec shown as hex,
+    binary, and ASCII. Includes keyword lookup table and
+    state machine binary transition table.
+
+  atkma_binary_index.txt
+    This file. Index of all binary folder contents.
+
+PURPOSE:
+
+  The binary folder provides machine-readable and
+  human-readable binary representations of the ATKMA
+  language specification for use in:
+
+    - Low-level runtime implementations
+    - Binary protocol adapters
+    - Cross-language opcode mapping
+    - State machine verification
+    - Embedded system ports of ATKMA
+
+OPCODE SUMMARY (4-bit):
+
+  0001  DETECT
+  0010  EXHAUST
+  0011  SUPPLEMENT
+  0100  AGREE
+  0101  EXCHANGE
+  0110  LOG
+  0111  PENDING
+  1000  FAILED
+  1001  PASS
+  1010  RESET
+
+============================================================
+END OF ATKMA BINARY FOLDER INDEX
+============================================================
