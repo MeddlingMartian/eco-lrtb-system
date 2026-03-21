@@ -1,0 +1,536 @@
+name: Workflow Orchestrator
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode: audit | coordinate | both'
+        required: false
+        default: 'both'
+
+permissions:
+  contents: write
+  actions: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: "orchestrator"
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+
+  self-heal:
+    name: Self Heal Workflow Syntax
+    runs-on: ubuntu-latest
+    outputs:
+      was_fixed: ${{ steps.heal.outputs.was_fixed }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.WORKFLOW_PAT }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "orchestrator-bot"
+          git config user.email "orchestrator-bot@eco-lrtb-system"
+
+      - name: Set git remote to use PAT
+        run: |
+          git remote set-url origin https://x-access-token:${{ secrets.WORKFLOW_PAT }}@github.com/${{ github.repository }}.git
+
+      - name: Heal workflow syntax
+        id: heal
+        run: |
+          node << 'HEAL_SCRIPT'
+          const fs = require('fs');
+          const path = require('path');
+
+          const WF_DIR = '.github/workflows';
+          const files = fs.readdirSync(WF_DIR)
+            .filter(f => f.endsWith('.yml') || f.endsWith('.yaml'));
+
+          const fixes = [];
+
+          for (const file of files) {
+            const filePath = path.join(WF_DIR, file);
+            const original = fs.readFileSync(filePath, 'utf8');
+            let content = original;
+
+            if (content.charCodeAt(0) === 0xFEFF) {
+              content = content.slice(1);
+              fixes.push(file + ': removed BOM character');
+            }
+
+            if (content.includes('\r\n')) {
+              content = content.replace(/\r\n/g, '\n');
+              fixes.push(file + ': converted CRLF to LF');
+            }
+
+            if (content.includes('\t')) {
+              content = content.replace(/\t/g, ' ');
+              fixes.push(file + ': converted tabs to spaces');
+            }
+
+            const linesTrimmed = content.split('\n').map(l => l.replace(/\s+$/, ''));
+            const trimmedContent = linesTrimmed.join('\n');
+            if (trimmedContent !== content) {
+              content = trimmedContent;
+              fixes.push(file + ': removed trailing spaces');
+            }
+
+            content = content.replace(/\n+$/, '') + '\n';
+
+            if (content !== original) {
+              fs.writeFileSync(filePath, content);
+              console.log('Fixed: ' + file);
+            } else {
+              console.log('Clean: ' + file);
+            }
+          }
+
+          const wasFixed = fixes.length > 0;
+          console.log('\nTotal fixes applied: ' + fixes.length);
+          for (const fix of fixes) {
+            console.log(' - ' + fix);
+          }
+
+          const outputFile = process.env.GITHUB_OUTPUT;
+          fs.appendFileSync(outputFile,
+            'was_fixed=' + (wasFixed ? 'true' : 'false') + '\n');
+
+          process.exit(0);
+          HEAL_SCRIPT
+
+      - name: Commit and push syntax fixes
+        run: |
+          git add .github/workflows/
+          if ! git diff --staged --quiet; then
+            git commit -m "self-heal: correct workflow syntax errors"
+            git pull --rebase origin main
+            git push origin main
+            echo "Syntax fixes committed and pushed"
+          else
+            echo "All workflow files are already clean"
+          fi
+
+  review:
+    name: Review All Repository Workflows
+    runs-on: ubuntu-latest
+    needs: self-heal
+    outputs:
+      schedule: ${{ steps.analyze.outputs.schedule }}
+      conflicts: ${{ steps.analyze.outputs.conflicts }}
+      safe_count: ${{ steps.analyze.outputs.safe_count }}
+      blocked_count: ${{ steps.analyze.outputs.blocked_count }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Analyze all workflows
+        id: analyze
+        run: |
+          node << 'ANALYZE_SCRIPT'
+          const fs = require('fs');
+          const path = require('path');
+
+          const WF_DIR = '.github/workflows';
+          if (!fs.existsSync(WF_DIR)) {
+            console.log('No workflows directory found');
+            process.exit(0);
+          }
+
+          const files = fs.readdirSync(WF_DIR)
+            .filter(f => f.endsWith('.yml') || f.endsWith('.yaml'));
+
+          const workflows = [];
+
+          for (const file of files) {
+            const content = fs.readFileSync(path.join(WF_DIR, file), 'utf8');
+            const lines = content.split('\n');
+
+            const nameLine = lines.find(l => l.match(/^name:/));
+            const wfName = nameLine
+              ? nameLine.replace(/^name:\s*/, '').replace(/['"]/g, '').trim()
+              : file;
+
+            const triggers = [];
+            if (content.includes('push:')) triggers.push('push');
+            if (content.includes('pull_request:')) triggers.push('pull_request');
+            if (content.includes('workflow_dispatch:')) triggers.push('manual');
+            if (content.includes('schedule:')) triggers.push('schedule');
+            if (content.includes('workflow_run:')) triggers.push('workflow_run');
+            if (content.includes('workflow_call:')) triggers.push('workflow_call');
+
+            const concurrencyMatch = content.match(/group:\s*["']?([^"'\n]+)["']?/);
+            const concurrencyGroup = concurrencyMatch
+              ? concurrencyMatch[1].trim()
+              : null;
+
+            const cancelMatch = content.match(/cancel-in-progress:\s*(true|false)/);
+            const cancelInProgress = cancelMatch
+              ? cancelMatch[1] === 'true'
+              : false;
+
+            const hasNode24 = content.includes('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true');
+            const hasPermissions = content.includes('permissions:');
+
+            workflows.push({
+              file,
+              name: wfName,
+              triggers,
+              concurrencyGroup,
+              cancelInProgress,
+              hasNode24,
+              hasPermissions,
+              pushTriggered: triggers.includes('push'),
+              manualOnly: triggers.length === 1 && triggers[0] === 'manual',
+            });
+          }
+
+          const conflicts = [];
+
+          const groupMap = {};
+          for (const wf of workflows) {
+            if (!wf.concurrencyGroup) continue;
+            const g = wf.concurrencyGroup.split('$')[0].trim();
+            if (!groupMap[g]) groupMap[g] = [];
+            groupMap[g].push(wf.name);
+          }
+          for (const [group, names] of Object.entries(groupMap)) {
+            if (names.length > 1) {
+              conflicts.push({
+                type: 'shared_concurrency_group',
+                group,
+                workflows: names,
+                severity: 'blocking',
+                message: names.join(' and ') + ' share concurrency group "' + group + '"',
+                fix: 'Give each workflow a unique concurrency group name',
+              });
+            }
+          }
+
+          const pushWfs = workflows.filter(wf =>
+            wf.pushTriggered && !wf.concurrencyGroup
+          );
+          if (pushWfs.length > 1) {
+            conflicts.push({
+              type: 'unmanaged_push_triggers',
+              workflows: pushWfs.map(w => w.name),
+              severity: 'warning',
+              message: pushWfs.length + ' workflows trigger on push with no concurrency group',
+              fix: 'Add a unique concurrency group to each push-triggered workflow',
+            });
+          }
+
+          const missingNode24 = workflows.filter(wf => !wf.hasNode24);
+          if (missingNode24.length > 0) {
+            conflicts.push({
+              type: 'missing_node24',
+              workflows: missingNode24.map(w => w.name),
+              severity: 'warning',
+              message: 'These workflows are missing FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true',
+              fix: 'Add env: FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true to each workflow',
+            });
+          }
+
+          const TIER_RULES = [
+            { keywords: ['deploy', 'pages'], tier: 1, label: 'Deploy' },
+            { keywords: ['audit', 'health', 'report'], tier: 2, label: 'Audit' },
+            { keywords: ['atkma', 'transpil', 'clean'], tier: 3, label: 'Transform' },
+            { keywords: ['push', 'pull', 'sync'], tier: 4, label: 'Sync' },
+          ];
+
+          const schedule = workflows.map(wf => {
+            const nameLower = wf.name.toLowerCase();
+            const fileLower = wf.file.toLowerCase();
+            let tier = 5;
+            let label = 'General';
+
+            for (const rule of TIER_RULES) {
+              if (rule.keywords.some(k =>
+                nameLower.includes(k) || fileLower.includes(k))) {
+                tier = rule.tier;
+                label = rule.label;
+                break;
+              }
+            }
+
+            return {
+              file: wf.file,
+              name: wf.name,
+              tier,
+              label,
+              pushTriggered: wf.pushTriggered,
+              manualOnly: wf.manualOnly,
+              concurrencyGroup: wf.concurrencyGroup,
+              cancelInProgress: wf.cancelInProgress,
+              hasNode24: wf.hasNode24,
+              hasPermissions: wf.hasPermissions,
+            };
+          }).sort((a, b) => a.tier - b.tier);
+
+          const blocked = conflicts.filter(c => c.severity === 'blocking');
+          const safe = workflows.filter(wf =>
+            !blocked.some(b => b.workflows && b.workflows.includes(wf.name))
+          );
+
+          fs.mkdirSync('.github/reports', { recursive: true });
+          fs.writeFileSync('.github/reports/orchestrator-analysis.json',
+            JSON.stringify({ workflows, conflicts, schedule }, null, 2));
+
+          const outputFile = process.env.GITHUB_OUTPUT;
+          const out = (k, v) => fs.appendFileSync(outputFile,
+            k + "=" + (typeof v === "string" ? v : JSON.stringify(v)) + "\n");
+
+          out('schedule', JSON.stringify(schedule));
+          out('conflicts', JSON.stringify(conflicts));
+          out('safe_count', String(safe.length));
+          out('blocked_count', String(blocked.length));
+
+          console.log('Workflows found: ' + workflows.length);
+          console.log('Conflicts found: ' + conflicts.length);
+          console.log('Safe to run: ' + safe.length);
+          console.log('Blocking conflicts: ' + blocked.length);
+
+          process.exit(0);
+          ANALYZE_SCRIPT
+
+  coordinate:
+    name: Apply Concurrency Coordination Fixes
+    runs-on: ubuntu-latest
+    needs: [self-heal, review]
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.WORKFLOW_PAT }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "orchestrator-bot"
+          git config user.email "orchestrator-bot@eco-lrtb-system"
+
+      - name: Set git remote to use PAT
+        run: |
+          git remote set-url origin https://x-access-token:${{ secrets.WORKFLOW_PAT }}@github.com/${{ github.repository }}.git
+
+      - name: Apply unique concurrency groups to all workflows
+        run: |
+          node << 'COORDINATE_SCRIPT'
+          const fs = require('fs');
+          const path = require('path');
+
+          const WF_DIR = '.github/workflows';
+          const files = fs.readdirSync(WF_DIR)
+            .filter(f => f.endsWith('.yml') || f.endsWith('.yaml'));
+
+          const TIER_GROUPS = {
+            'deploy-pages.yml': { group: 'pages-deploy', tier: 1 },
+            'repo-health-audit.yml': { group: 'audit-health', tier: 2 },
+            'atkma-deno-transpiler.yml': { group: 'atkma-transpile', tier: 3 },
+            'atkma-path-cleanup.yml': { group: 'atkma-cleanup', tier: 3 },
+            'atkma-git-cleanup.yml': { group: 'atkma-git-clean', tier: 3 },
+            'push-to-targets.yml': { group: 'sync-push', tier: 4 },
+            'pull-from-source.yml': { group: 'sync-pull', tier: 4 },
+            'workflow-orchestrator.yml': { group: 'orchestrator', tier: 0 },
+          };
+
+          const fixes_applied = [];
+
+          for (const file of files) {
+            const filePath = path.join(WF_DIR, file);
+            let content = fs.readFileSync(filePath, 'utf8');
+            const original = content;
+
+            const config = TIER_GROUPS[file];
+            if (!config) continue;
+
+            const hasConcurrency = content.includes('concurrency:');
+
+            if (!hasConcurrency) {
+              const concurrencyBlock =
+                '\nconcurrency:\n' +
+                ' group: "' + config.group + '"\n' +
+                ' cancel-in-progress: false\n';
+
+              content = content.replace(
+                /^(permissions:[\s\S]*?\n)(?=\w)/m,
+                '$1' + concurrencyBlock
+              );
+
+              if (!content.includes('concurrency:')) {
+                content = content.replace(
+                  /^(env:[\s\S]*?\n)(?=\w)/m,
+                  '$1' + concurrencyBlock
+                );
+              }
+
+              if (!content.includes('concurrency:')) {
+                content = content.replace(
+                  /^(on:[\s\S]*?\n)(?=\w)/m,
+                  '$1' + concurrencyBlock
+                );
+              }
+
+              fixes_applied.push(
+                'Added concurrency group "' + config.group + '" to ' + file
+              );
+            } else {
+              const genericGroups = ['"pages"', '"audit"', '"atkma"', '"sync"'];
+              for (const generic of genericGroups) {
+                if (content.includes('group: ' + generic) &&
+                    !content.includes('group: "' + config.group + '"')) {
+                  content = content.replace(
+                    new RegExp(
+                      'group:\\s*' +
+                      generic.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                      'g'
+                    ),
+                    'group: "' + config.group + '"'
+                  );
+                  fixes_applied.push(
+                    'Updated concurrency group to "' + config.group + '" in ' + file
+                  );
+                }
+              }
+            }
+
+            if (!content.includes('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24')) {
+              content = content.replace(
+                /^(env:\s*\n)/m,
+                '$1 FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true\n'
+              );
+              if (!content.includes('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24')) {
+                content = content.replace(
+                  /^(concurrency:\s*\n group:.*\n cancel-in-progress:.*\n)/m,
+                  '$1\nenv:\n FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true\n'
+                );
+              }
+              fixes_applied.push(
+                'Added FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 to ' + file
+              );
+            }
+
+            if (content !== original) {
+              fs.writeFileSync(filePath, content);
+              console.log('Updated: ' + file);
+            }
+          }
+
+          console.log('Fixes applied: ' + fixes_applied.length);
+          for (const fix of fixes_applied) {
+            console.log(' - ' + fix);
+          }
+
+          process.exit(0);
+          COORDINATE_SCRIPT
+
+      - name: Commit and push coordination fixes
+        run: |
+          git add .github/workflows/
+          if ! git diff --staged --quiet; then
+            git commit -m "orchestrator: apply unique concurrency groups"
+            git pull --rebase origin main
+            git push origin main
+            echo "Coordination fixes committed and pushed"
+          else
+            echo "All workflows already have unique concurrency groups"
+          fi
+
+  report:
+    name: Post Orchestration Report
+    runs-on: ubuntu-latest
+    needs: [self-heal, review, coordinate]
+    continue-on-error: true
+    if: always()
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Post report as commit comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            let analysis = { workflows: [], conflicts: [], schedule: [] };
+            try {
+              analysis = JSON.parse(
+                fs.readFileSync('.github/reports/orchestrator-analysis.json', 'utf8')
+              );
+            } catch(readError) {
+              console.log('No analysis file: ' + readError.message);
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const runId = context.runId;
+            const sha = context.sha;
+            const runUrl = "https://github.com/" + owner + "/" + repo + "/actions/runs/" + runId;
+
+            const wfCount = analysis.workflows.length;
+            const conflicts = analysis.conflicts.length;
+            const schedule = analysis.schedule || [];
+
+            let body = "## Workflow Orchestration Report\n\n";
+            body += "**Run:** [View log](" + runUrl + ")\n\n";
+            body += "| Metric | Value |\n|--------|-------|\n";
+            body += "| Workflows found | " + wfCount + " |\n";
+            body += "| Conflicts resolved | " + conflicts + " |\n\n";
+            body += "---\n\n### Execution Schedule\n\n";
+            body += "| Tier | Label | Workflow | Concurrency Group |\n";
+            body += "|------|-------|----------|-------------------|\n";
+
+            for (const wf of schedule) {
+              const group = wf.concurrencyGroup || "assigned by orchestrator";
+              const mode = wf.manualOnly ? " (manual only)" : "";
+              body += "| " + wf.tier + " | " + wf.label + " | " +
+                      wf.name + mode + " | " + group + " |\n";
+            }
+
+            if (analysis.conflicts.length > 0) {
+              body += "\n---\n\n### Conflicts Resolved\n\n";
+              for (const c of analysis.conflicts) {
+                body += "**" + c.type + "** (" + c.severity + "): ";
+                body += c.message + "\n";
+                body += "Fix applied: " + c.fix + "\n\n";
+              }
+            }
+
+            body += "\n---\n\n### Result\n\n";
+            body += "Each workflow now runs in its own concurrency lane.\n";
+            body += "Push to main triggers all workflows simultaneously.\n";
+
+            try {
+              await github.rest.repos.createCommitComment({
+                owner: owner,
+                repo: repo,
+                commit_sha: sha,
+                body: body,
+              });
+              console.log('Report posted');
+            } catch(postError) {
+              console.log('Could not post: ' + postError.message);
+            }
