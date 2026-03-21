@@ -1,0 +1,490 @@
+name: Repository Health Audit and Auto-Fix
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  pages: read
+
+concurrency:
+  group: "audit"
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  AUDIT_BRANCH_PREFIX: "audit/fix"
+  REPORT_FILE: ".github/reports/audit-report.md"
+
+jobs:
+
+  # ── JOB 1: AUDIT ──────────────────────────────────────────────────────────────
+  audit:
+    name: Scan Repository Structure
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    outputs:
+      has_errors:     ${{ steps.scan.outputs.has_errors }}
+      error_count:    ${{ steps.scan.outputs.error_count }}
+      warning_count:  ${{ steps.scan.outputs.warning_count }}
+      report_json:    ${{ steps.scan.outputs.report_json }}
+      branch_name:    ${{ steps.scan.outputs.branch_name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run structural audit
+        id: scan
+        run: |
+          node << 'AUDIT_SCRIPT'
+          const fs   = require('fs');
+          const path = require('path');
+          const { execSync } = require('child_process');
+
+          // ── REGISTRY: expected files and their correct locations ──────────────
+          const REGISTRY = [
+            { id: 'master',   path: 'ECO_LRTB.FILE',                   required: true  },
+            { id: 'spec-txt', path: 'eco_lrtb_spec.txt',               required: true  },
+            { id: 'spec-md',  path: 'eco_lrtb_spec.md',                required: true  },
+            { id: 'c-header', path: 'core/eco_lrtb.h',                 required: true  },
+            { id: 'c-impl',   path: 'core/eco_lrtb.c',                 required: true  },
+            { id: 'csharp',   path: 'core/eco_lrtb.cs',                required: true  },
+            { id: 'python',   path: 'core/eco_lrtb.py',                required: true  },
+            { id: 'js',       path: 'core/eco_lrtb.js',                required: true  },
+            { id: 'html',     path: 'core/eco_lrtb.html',              required: true  },
+            { id: 'php',      path: 'core/eco_lrtb.php',               required: true  },
+            { id: 'css',      path: 'core/eco_lrtb_w3c.css',           required: true  },
+            { id: 'nix',      path: 'core/eco_lrtb.nix',               required: true  },
+            { id: 'polyfill', path: 'polyfill/eco_lrtb_polyfill.js',   required: true  },
+            { id: 'nitro',    path: 'nitro/eco_lrtb_nitro.js',         required: true  },
+            { id: 'v8',       path: 'nitro/eco_lrtb_v8.js',            required: true  },
+            { id: 'turbine',  path: 'nitro/eco_lrtb_turbine.js',       required: true  },
+            { id: 'apache',   path: 'apache/eco_lrtb.conf',            required: true  },
+            { id: 'maven',    path: 'maven/pom.xml',                   required: true  },
+            { id: 'xml',      path: 'xml/eco_lrtb.xml',                required: true  },
+            { id: 'ftp-lib',  path: 'ftp/eco_ftp_library.js',          required: true  },
+            { id: 'deploy',   path: '.github/workflows/deploy-pages.yml',   required: true  },
+            { id: 'push-wf',  path: '.github/workflows/push-to-targets.yml',required: false },
+            { id: 'pull-wf',  path: '.github/workflows/pull-from-source.yml',required: false},
+          ];
+
+          // ── NAMING RULES ──────────────────────────────────────────────────────
+          const NAMING_RULES = [
+            { pattern: /\s/,           message: 'filename contains spaces'          },
+            { pattern: /[A-Z]/,        message: 'filename contains uppercase letters',
+              exempt: ['ECO_LRTB.FILE','README.md','CONTRIBUTING.md','LICENSE'] },
+            { pattern: /\.yml$/,       message: null },
+            { pattern: /\.(js|ts)$/,   message: null },
+          ];
+
+          // ── WORKFLOW NODE VERSION CHECK ────────────────────────────────────────
+          const NODE24_ENV = 'FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true';
+
+          const errors   = [];
+          const warnings = [];
+          const fixes    = [];
+          const passed   = [];
+
+          // ── 1. CHECK REGISTRY FILES EXIST AT CORRECT PATHS ───────────────────
+          for (const entry of REGISTRY) {
+            if (fs.existsSync(entry.path)) {
+              passed.push({ id: entry.id, path: entry.path,
+                            message: 'present at correct location' });
+            } else {
+              const issue = {
+                id:      entry.id,
+                path:    entry.path,
+                type:    entry.required ? 'error' : 'warning',
+                message: `${entry.required ? 'Required' : 'Optional'} file missing: ${entry.path}`,
+                fix:     `Create file at correct path: ${entry.path}`,
+              };
+              if (entry.required) errors.push(issue);
+              else                warnings.push(issue);
+            }
+          }
+
+          // ── 2. SCAN FOR MISPLACED ECO FILES ───────────────────────────────────
+          function walk(dir, depth = 0) {
+            if (depth > 5) return;
+            if (!fs.existsSync(dir)) return;
+            for (const f of fs.readdirSync(dir)) {
+              if (f.startsWith('.') || f === 'node_modules') continue;
+              const full = path.join(dir, f);
+              const stat = fs.statSync(full);
+              if (stat.isDirectory()) {
+                walk(full, depth + 1);
+              } else {
+                const rel = full.replace(/^\.\//, '');
+                // Check if an eco_ file is in a wrong folder
+                if (f.startsWith('eco_') || f === 'ECO_LRTB.FILE') {
+                  const expected = REGISTRY.find(r => path.basename(r.path) === f);
+                  if (expected && rel !== expected.path) {
+                    errors.push({
+                      id:      f,
+                      path:    rel,
+                      type:    'error',
+                      message: `File ${f} found at ${rel} but expected at ${expected.path}`,
+                      fix:     `Move ${rel} to ${expected.path}`,
+                      move:    { from: rel, to: expected.path },
+                    });
+                  }
+                }
+                // Check for spaces in filenames
+                if (/\s/.test(f)) {
+                  const fixed = f.replace(/\s+/g, '-').toLowerCase();
+                  warnings.push({
+                    id:      f,
+                    path:    rel,
+                    type:    'warning',
+                    message: `Filename contains spaces: ${f}`,
+                    fix:     `Rename to: ${fixed}`,
+                    rename:  { from: rel, to: path.join(path.dirname(rel), fixed) },
+                  });
+                }
+              }
+            }
+          }
+          walk('.');
+
+          // ── 3. WORKFLOW FILE CHECKS ───────────────────────────────────────────
+          const wfDir = '.github/workflows';
+          if (fs.existsSync(wfDir)) {
+            for (const f of fs.readdirSync(wfDir)) {
+              if (!f.endsWith('.yml') && !f.endsWith('.yaml')) continue;
+              const content = fs.readFileSync(path.join(wfDir, f), 'utf8');
+              if (!content.includes(NODE24_ENV)) {
+                warnings.push({
+                  id:      f,
+                  path:    path.join(wfDir, f),
+                  type:    'warning',
+                  message: `Workflow ${f} is missing FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true`,
+                  fix:     `Add env: FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true to ${f}`,
+                });
+              }
+              if (content.includes('actions/checkout@v3') ||
+                  content.includes('actions/checkout@v2')) {
+                warnings.push({
+                  id:      f,
+                  path:    path.join(wfDir, f),
+                  type:    'warning',
+                  message: `Workflow ${f} uses an outdated checkout action version`,
+                  fix:     `Update to actions/checkout@v4 in ${f}`,
+                });
+              }
+            }
+          }
+
+          // ── 4. CHECK FOLDER STRUCTURE ─────────────────────────────────────────
+          const REQUIRED_DIRS = ['core','nitro','polyfill','apache','maven','xml','ftp'];
+          for (const dir of REQUIRED_DIRS) {
+            if (!fs.existsSync(dir)) {
+              errors.push({
+                id:      dir,
+                path:    dir,
+                type:    'error',
+                message: `Required directory missing: ${dir}/`,
+                fix:     `Create directory ${dir}/ and populate with registry files`,
+              });
+            }
+          }
+
+          // ── 5. CHECK ECO_LRTB.FILE REGISTRY MATCHES ACTUAL FILES ─────────────
+          if (fs.existsSync('ECO_LRTB.FILE')) {
+            const masterContent = fs.readFileSync('ECO_LRTB.FILE', 'utf8');
+            for (const entry of REGISTRY) {
+              if (!masterContent.includes(path.basename(entry.path))) {
+                warnings.push({
+                  id:      entry.id,
+                  path:    'ECO_LRTB.FILE',
+                  type:    'warning',
+                  message: `ECO_LRTB.FILE registry does not reference: ${entry.path}`,
+                  fix:     `Add ${entry.path} to [ECO_REGISTRY] block in ECO_LRTB.FILE`,
+                });
+              }
+            }
+          }
+
+          // ── BUILD REPORT ──────────────────────────────────────────────────────
+          const timestamp  = new Date().toISOString();
+          const branchName = `audit/fix-${timestamp.slice(0,10)}-${
+            Math.random().toString(36).slice(2,7)}`;
+
+          const report = {
+            timestamp,
+            branchName,
+            summary: {
+              errors:   errors.length,
+              warnings: warnings.length,
+              passed:   passed.length,
+            },
+            errors,
+            warnings,
+            passed,
+          };
+
+          // Write report JSON for next job
+          fs.mkdirSync('.github/reports', { recursive: true });
+          fs.writeFileSync('.github/reports/latest.json',
+            JSON.stringify(report, null, 2));
+
+          // Set outputs
+          const core = require('@actions/core') || {
+            setOutput: (k,v) => process.stdout.write(`::set-output name=${k}::${v}\n`),
+          };
+
+          // Use GITHUB_OUTPUT env file
+          const outputFile = process.env.GITHUB_OUTPUT;
+          const out = (k, v) => fs.appendFileSync(outputFile,
+            `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}\n`);
+
+          out('has_errors',    errors.length > 0 ? 'true' : 'false');
+          out('error_count',   String(errors.length));
+          out('warning_count', String(warnings.length));
+          out('branch_name',   branchName);
+          out('report_json',   JSON.stringify(report).replace(/\n/g, ''));
+
+          console.log(`Audit complete: ${errors.length} errors, ${warnings.length} warnings, ${passed.length} passed`);
+          process.exit(0);
+          AUDIT_SCRIPT
+
+  # ── JOB 2: GENERATE REPORT AND POST COMMENT ───────────────────────────────────
+  report:
+    name: Post Audit Report as Comment
+    runs-on: ubuntu-latest
+    needs: audit
+    continue-on-error: true
+    if: always()
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and post report comment
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs   = require('fs');
+            const path = require('path');
+
+            // Read audit report if it exists
+            let report = null;
+            try {
+              report = JSON.parse(
+                fs.readFileSync('.github/reports/latest.json', 'utf8')
+              );
+            } catch(e) {
+              report = {
+                timestamp:  new Date().toISOString(),
+                branchName: 'audit/fix-pending',
+                summary:    { errors: 0, warnings: 0, passed: 0 },
+                errors:     [],
+                warnings:   [],
+                passed:     [],
+              };
+            }
+
+            const { errors, warnings, passed, summary, timestamp, branchName } = report;
+            const repo   = context.repo;
+            const runUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`;
+            const branchUrl = `https://github.com/${repo.owner}/${repo.repo}/tree/${branchName}`;
+            const statusIcon = errors.length === 0 ? '✅' : '⚠️';
+
+            // Build markdown report
+            let body = `## ${statusIcon} Repository Health Audit Report\n\n`;
+            body += `**Run:** [View full workflow log](${runUrl})\n`;
+            body += `**Timestamp:** ${timestamp}\n`;
+            body += `**Fix branch:** [\`${branchName}\`](${branchUrl})\n\n`;
+            body += `---\n\n`;
+
+            // Summary table
+            body += `### Summary\n\n`;
+            body += `| Status | Count |\n|--------|-------|\n`;
+            body += `| ✅ Passed  | ${summary.passed}   |\n`;
+            body += `| ⚠️ Warnings | ${summary.warnings} |\n`;
+            body += `| ❌ Errors  | ${summary.errors}   |\n\n`;
+
+            // Errors section
+            if (errors.length > 0) {
+              body += `---\n\n### ❌ Errors (${errors.length})\n\n`;
+              body += `| File | Issue | Suggested Fix |\n|------|-------|---------------|\n`;
+              for (const e of errors) {
+                body += `| \`${e.path}\` | ${e.message} | ${e.fix} |\n`;
+              }
+              body += `\n`;
+            }
+
+            // Warnings section
+            if (warnings.length > 0) {
+              body += `---\n\n### ⚠️ Warnings (${warnings.length})\n\n`;
+              body += `| File | Issue | Suggested Fix |\n|------|-------|---------------|\n`;
+              for (const w of warnings) {
+                body += `| \`${w.path}\` | ${w.message} | ${w.fix} |\n`;
+              }
+              body += `\n`;
+            }
+
+            // Passed section
+            if (passed.length > 0) {
+              body += `---\n\n### ✅ Passed (${passed.length})\n\n`;
+              body += `<details><summary>View all passing checks</summary>\n\n`;
+              body += `| File | Status |\n|------|--------|\n`;
+              for (const p of passed) {
+                body += `| \`${p.path}\` | ${p.message} |\n`;
+              }
+              body += `\n</details>\n\n`;
+            }
+
+            // Fix branch info
+            body += `---\n\n### Fix Branch\n\n`;
+            body += `A fix branch has been created at [\`${branchName}\`](${branchUrl}).\n\n`;
+            body += `This branch:\n`;
+            body += `- Contains the audit report at \`.github/reports/audit-report.md\`\n`;
+            body += `- Contains suggested fixes as individual commits\n`;
+            body += `- Can be merged into \`main\` independently\n`;
+            body += `- Can be extended with new files without affecting \`main\`\n`;
+            body += `- Is fully pullable and mergeable when ready\n\n`;
+            body += `To merge fixes when ready:\n`;
+            body += `\`\`\`bash\ngit fetch origin ${branchName}\n`;
+            body += `git checkout main\n`;
+            body += `git merge origin/${branchName} --no-ff\n`;
+            body += `git push origin main\n\`\`\`\n`;
+
+            // Post as commit comment
+            try {
+              await github.rest.repos.createCommitComment({
+                owner:      repo.owner,
+                repo:       repo.repo,
+                commit_sha: context.sha,
+                body,
+              });
+              console.log('Posted audit report as commit comment');
+            } catch(e) {
+              console.log('Could not post commit comment:', e.message);
+            }
+
+            // Also create/update an issue for persistent tracking
+            try {
+              const issues = await github.rest.issues.listForRepo({
+                owner:  repo.owner,
+                repo:   repo.repo,
+                labels: 'audit-report',
+                state:  'open',
+              });
+
+              const issueBody = body + `\n\n---\n*Auto-generated by repo-health-audit.yml*`;
+
+              if (issues.data.length > 0) {
+                await github.rest.issues.createComment({
+                  owner:      repo.owner,
+                  repo:       repo.repo,
+                  issue_number: issues.data[0].number,
+                  body:       issueBody,
+                });
+                console.log('Updated existing audit issue');
+              } else {
+                await github.rest.issues.create({
+                  owner:  repo.owner,
+                  repo:   repo.repo,
+                  title:  `Audit Report - ${timestamp.slice(0,10)}`,
+                  body:   issueBody,
+                  labels: ['audit-report'],
+                });
+                console.log('Created new audit issue');
+              }
+            } catch(e) {
+              console.log('Could not create/update issue:', e.message);
+            }
+
+  # ── JOB 3: CREATE FIX BRANCH ──────────────────────────────────────────────────
+  create-fix-branch:
+    name: Create Fix Branch with Corrections
+    runs-on: ubuntu-latest
+    needs: audit
+    continue-on-error: true
+    if: needs.audit.outputs.has_errors == 'true' || always()
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "eco-lrtb-audit-bot"
+          git config user.email "audit-bot@eco-lrtb-system"
+
+      - name: Create fix branch from current HEAD
+        run: |
+          BRANCH_NAME="${{ needs.audit.outputs.branch_name }}"
+          git checkout -b "${BRANCH_NAME}"
+          echo "Created branch: ${BRANCH_NAME}"
+
+      - name: Apply structural fixes
+        run: |
+          node << 'FIX_SCRIPT'
+          const fs   = require('fs');
+          const path = require('path');
+
+          let report = null;
+          try {
+            report = JSON.parse(
+              fs.readFileSync('.github/reports/latest.json','utf8')
+            );
+          } catch(e) {
+            console.log('No report found, skipping fixes');
+            process.exit(0);
+          }
+
+          const fixes_applied = [];
+
+          // Fix 1: Create missing required directories
+          const REQUIRED_DIRS = [
+            'core','nitro','polyfill','apache','maven','xml','ftp',
+            '.github/reports',
+          ];
+          for (const dir of REQUIRED_DIRS) {
+            if (!fs.existsSync(dir)) {
+              fs.mkdirSync(dir, { recursive: true });
+              // Add a .gitkeep so the empty dir is tracked
+              fs.writeFileSync(path.join(dir, '.gitkeep'), '');
+              fixes_applied.push(`Created missing directory: ${dir}/`);
+            }
+          }
+
+          // Fix 2: Move misplaced files
+          for (const issue of report.errors) {
+            if (issue.move) {
+              const { from, to } = issue.move;
+              if (fs.existsSync(from)) {
+                fs.mkdirSync(path.dirname(to), { recursive: true });
+                fs.copyFileSync(from, to);
+                fs.unlinkSync(from);
+                fixes_applied.push(`Moved ${from} to ${to}`);
+              }
+            }
+          }
+
+          // Fix 3: Rename files with spaces
+          for (const issue of report.warnings) {
+            if (issue.rename) {
+              const { from, to } = issue.rename;
+              if (fs.existsSync(from)) {
+                fs.mkdirSync(path.dirname(to
