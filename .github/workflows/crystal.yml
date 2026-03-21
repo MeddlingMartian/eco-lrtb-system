@@ -11,7 +11,7 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    container:
+  container:
       image: crystallang/crystal
 
     steps:

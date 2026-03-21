@@ -7,7 +7,7 @@ on:
 jobs:
   summary:
     runs-on: ubuntu-latest
-    permissions:
+  permissions:
       issues: write
       models: read
       contents: read

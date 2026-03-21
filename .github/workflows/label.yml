@@ -12,7 +12,7 @@ jobs:
   label:
 
     runs-on: ubuntu-latest
-    permissions:
+  permissions:
       contents: read
       pull-requests: write
 

@@ -35,7 +35,7 @@ jobs:
   self-heal:
     name: Self Heal Workflow Syntax
     runs-on: ubuntu-latest
-    outputs:
+  outputs:
       was_fixed: ${{ steps.heal.outputs.was_fixed }}
 
     steps:
@@ -527,7 +527,7 @@ jobs:
             echo "All workflows already have unique concurrency groups"
           fi
 
-      
+
   report:
     name: Post Orchestration Report
     runs-on: ubuntu-latest

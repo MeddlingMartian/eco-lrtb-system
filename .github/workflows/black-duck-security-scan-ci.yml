@@ -21,7 +21,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
+  permissions:
       contents: read
       pull-requests: write
       security-events: write
@@ -51,4 +51,3 @@ jobs:
           srm_url: ${{ vars.SRM_URL }}
           srm_apikey: ${{ secrets.SRM_API_KEY }}
           srm_assessment_types: "SCA,SAST"
-

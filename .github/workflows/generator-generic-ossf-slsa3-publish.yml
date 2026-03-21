@@ -19,7 +19,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    outputs:
+  outputs:
       digests: ${{ steps.hash.outputs.digests }}
 
     steps:

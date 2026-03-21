@@ -13,7 +13,7 @@ jobs:
   stale:
 
     runs-on: ubuntu-latest
-    permissions:
+  permissions:
       issues: write
       pull-requests: write
 
