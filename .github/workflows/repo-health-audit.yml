@@ -487,4 +487,154 @@ jobs:
             if (issue.rename) {
               const { from, to } = issue.rename;
               if (fs.existsSync(from)) {
-                fs.mkdirSync(path.dirname(to
+                fs.mkdirSync(path.dirname(to), { recursive: true });
+                fs.renameSync(from, to);
+                fixes_applied.push(`Renamed ${from} to ${to}`);
+              }
+            }
+          }
+
+          // Write the human-readable report to the fix branch
+          fs.mkdirSync('.github/reports', { recursive: true });
+
+          const ts     = report.timestamp;
+          const errors = report.errors;
+          const warns  = report.warnings;
+          const passed = report.passed;
+
+          let md  = `# Eco_L_R_T_B_System — Audit Report\n\n`;
+          md += `**Generated:** ${ts}\n\n`;
+          md += `**Fix branch:** \`${report.branchName}\`\n\n`;
+          md += `---\n\n`;
+          md += `## Summary\n\n`;
+          md += `| Status | Count |\n|--------|-------|\n`;
+          md += `| Passed   | ${passed.length}  |\n`;
+          md += `| Warnings | ${warns.length}   |\n`;
+          md += `| Errors   | ${errors.length}  |\n\n`;
+
+          if (errors.length > 0) {
+            md += `---\n\n## Errors\n\n`;
+            for (const e of errors) {
+              md += `### ${e.path}\n- **Issue:** ${e.message}\n- **Fix:** ${e.fix}\n\n`;
+            }
+          }
+
+          if (warns.length > 0) {
+            md += `---\n\n## Warnings\n\n`;
+            for (const w of warns) {
+              md += `### ${w.path}\n- **Issue:** ${w.message}\n- **Fix:** ${w.fix}\n\n`;
+            }
+          }
+
+          if (fixes_applied.length > 0) {
+            md += `---\n\n## Fixes Applied in This Branch\n\n`;
+            for (const f of fixes_applied) {
+              md += `- ${f}\n`;
+            }
+            md += `\n`;
+          }
+
+          md += `---\n\n## Branch Purpose\n\n`;
+          md += `This branch was created automatically by \`repo-health-audit.yml\`.\n\n`;
+          md += `It serves as an isolated workspace where:\n\n`;
+          md += `- Identified issues are corrected without touching \`main\`\n`;
+          md += `- New files can be added alongside the corrections\n`;
+          md += `- Further development can proceed independently\n`;
+          md += `- Changes can be merged to \`main\` via pull request when ready\n\n`;
+          md += `## How to Use This Branch\n\n`;
+          md += '```bash\n';
+          md += `git fetch origin ${report.branchName}\n`;
+          md += `git checkout ${report.branchName}\n`;
+          md += `# add new files, build on corrections\n`;
+          md += `git push origin ${report.branchName}\n`;
+          md += '```\n\n';
+          md += `Then open a pull request from \`${report.branchName}\` into \`main\`.\n`;
+
+          fs.writeFileSync('.github/reports/audit-report.md', md);
+          console.log('Wrote audit-report.md');
+
+          // Write fixes summary
+          fs.writeFileSync('.github/reports/fixes-applied.json',
+            JSON.stringify({ timestamp: ts, fixes: fixes_applied }, null, 2));
+
+          console.log(`Applied ${fixes_applied.length} fixes`);
+          process.exit(0);
+          FIX_SCRIPT
+
+      - name: Commit fixes and report to fix branch
+        run: |
+          BRANCH_NAME="${{ needs.audit.outputs.branch_name }}"
+
+          git add .github/reports/
+          git add -A
+
+          # Only commit if there are staged changes
+          if ! git diff --staged --quiet; then
+            git commit -m "audit: apply structural fixes and generate report
+
+          Branch: ${BRANCH_NAME}
+          Errors found: ${{ needs.audit.outputs.error_count }}
+          Warnings found: ${{ needs.audit.outputs.warning_count }}
+
+          This commit:
+          - Moves misplaced files to correct registry locations
+          - Creates missing required directories
+          - Renames files with invalid characters
+          - Adds audit-report.md with full findings
+
+          This branch can be merged to main independently.
+          It can also be extended with new files for further development."
+
+            git push origin "${BRANCH_NAME}"
+            echo "Pushed fix branch: ${BRANCH_NAME}"
+          else
+            # Push the branch even with no changes so the report link works
+            git push origin "${BRANCH_NAME}"
+            echo "No structural fixes needed, branch pushed with report only"
+          fi
+
+      - name: Open pull request for fix branch
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const branchName  = `${{ needs.audit.outputs.branch_name }}`;
+            const errorCount  = `${{ needs.audit.outputs.error_count }}`;
+            const warnCount   = `${{ needs.audit.outputs.warning_count }}`;
+            const runUrl      = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const reportUrl   = `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${branchName}/.github/reports/audit-report.md`;
+
+            try {
+              await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                title: `audit: structural fixes — ${new Date().toISOString().slice(0,10)}`,
+                head:  branchName,
+                base:  'main',
+                body: `## Automated Repository Audit Fix\n\n` +
+                  `**Audit run:** [View log](${runUrl})\n` +
+                  `**Full report:** [audit-report.md](${reportUrl})\n\n` +
+                  `### What this PR contains\n\n` +
+                  `- ${errorCount} error(s) corrected\n` +
+                  `- ${warnCount} warning(s) flagged\n` +
+                  `- Audit report added at \`.github/reports/audit-report.md\`\n` +
+                  `- Fix summary at \`.github/reports/fixes-applied.json\`\n\n` +
+                  `### This branch is safe to extend\n\n` +
+                  `You can add new files to this branch before merging.\n` +
+                  `It will not conflict with \`main\` because all corrections\n` +
+                  `move files *into* their correct registry locations.\n\n` +
+                  `### To merge when ready\n\n` +
+                  '```bash\n' +
+                  `git fetch origin ${branchName}\n` +
+                  `git checkout main\n` +
+                  `git merge origin/${branchName} --no-ff\n` +
+                  `git push origin main\n` +
+                  '```\n',
+                draft: false,
+                maintainer_can_modify: true,
+              });
+              console.log('Pull request created');
+            } catch(e) {
+              console.log('PR already exists or could not be created:', e.message);
+            }
