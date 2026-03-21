@@ -1,0 +1,520 @@
+name: ATKMA Deno Compatibility Transpiler
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      target_runtime:
+        description: 'Target runtime for ATKMA exchange'
+        required: false
+        default: 'deno'
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: "atkma"
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ATKMA_TARGET: ${{ inputs.target_runtime || 'deno' }}
+  ATKMA_BRANCH_PREFIX: "atkma/exchange"
+
+jobs:
+
+  detect:
+    name: Detect var and e Incompatibilities
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    outputs:
+      has_issues:    ${{ steps.scan.outputs.has_issues }}
+      issue_count:   ${{ steps.scan.outputs.issue_count }}
+      files_flagged: ${{ steps.scan.outputs.files_flagged }}
+      branch_name:   ${{ steps.scan.outputs.branch_name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Scan for var and bare catch-e patterns
+        id: scan
+        run: |
+          node << 'SCAN_SCRIPT'
+          const fs   = require('fs');
+          const path = require('path');
+
+          const PATTERNS = [
+            {
+              id:          'var_declaration',
+              regex:       /\bvar\s+/g,
+              description: 'var is not allowed in Deno strict mode',
+              exchange:    'exchange_var',
+              supp_lang:   'typescript',
+            },
+            {
+              id:          'bare_catch_e',
+              regex:       /catch\s*\(\s*e\s*\)/g,
+              description: 'catch(e) with bare e parameter -- requires typed catch in Deno',
+              exchange:    'exchange_catch_e_used',
+              supp_lang:   'typescript',
+            },
+          ];
+
+          const issues  = [];
+          const scanned = [];
+
+          function walk(dir, depth) {
+            if (depth > 6 || !fs.existsSync(dir)) return;
+            for (const f of fs.readdirSync(dir)) {
+              if (f.startsWith('.') || f === 'node_modules') continue;
+              const full = path.join(dir, f);
+              const stat = fs.statSync(full);
+              if (stat.isDirectory()) {
+                walk(full, depth + 1);
+              } else if (f.endsWith('.js') || f.endsWith('.ts') || f.endsWith('.mjs')) {
+                const rel     = full.replace(/^\.\//, '');
+                const content = fs.readFileSync(full, 'utf8');
+                const lines   = content.split('\n');
+                scanned.push(rel);
+
+                for (const pattern of PATTERNS) {
+                  lines.forEach((line, idx) => {
+                    const re = new RegExp(pattern.regex.source, 'g');
+                    if (re.test(line)) {
+                      issues.push({
+                        file:        rel,
+                        line_number: idx + 1,
+                        line_index:  idx,
+                        original:    line.trim(),
+                        pattern_id:  pattern.id,
+                        description: pattern.description,
+                        exchange:    pattern.exchange,
+                        supp_lang:   pattern.supp_lang,
+                      });
+                    }
+                  });
+                }
+              }
+            }
+          }
+          walk('.', 0);
+
+          const by_file = {};
+          for (const issue of issues) {
+            if (!by_file[issue.file]) by_file[issue.file] = [];
+            by_file[issue.file].push(issue);
+          }
+
+          const timestamp  = new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
+          const branchName = `atkma/exchange-${timestamp}`;
+
+          fs.mkdirSync('atkma/exchanges', { recursive: true });
+          fs.writeFileSync('atkma/exchanges/latest-scan.json',
+            JSON.stringify({
+              timestamp: new Date().toISOString(),
+              branchName,
+              issues,
+              by_file,
+              scanned
+            }, null, 2));
+
+          const outputFile = process.env.GITHUB_OUTPUT;
+          const out = (k, v) => fs.appendFileSync(outputFile, `${k}=${v}\n`);
+
+          out('has_issues',    issues.length > 0 ? 'true' : 'false');
+          out('issue_count',   String(issues.length));
+          out('files_flagged', String(Object.keys(by_file).length));
+          out('branch_name',   branchName);
+
+          console.log(`Scanned ${scanned.length} files`);
+          console.log(`Found ${issues.length} ATKMA issues across ${Object.keys(by_file).length} files`);
+          process.exit(0);
+          SCAN_SCRIPT
+
+  transpile:
+    name: Apply ATKMA Exchanges and Create Branch
+    runs-on: ubuntu-latest
+    needs: detect
+    continue-on-error: true
+    if: needs.detect.outputs.has_issues == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "atkma-transpiler-bot"
+          git config user.email "atkma-bot@eco-lrtb-system"
+
+      - name: Create ATKMA exchange branch
+        run: |
+          BRANCH="${{ needs.detect.outputs.branch_name }}"
+          git checkout -b "${BRANCH}"
+          echo "Created branch: ${BRANCH}"
+
+      - name: Run ATKMA transpiler on all flagged files
+        run: |
+          node << 'TRANSPILE_SCRIPT'
+          const fs   = require('fs');
+          const path = require('path');
+
+          const scan = JSON.parse(
+            fs.readFileSync('atkma/exchanges/latest-scan.json','utf8')
+          );
+
+          const TOADSTOOL_HEADER =
+            `// Licensed under the Toadstool Open Source Software License v1.0.0\n` +
+            `// Copyright (C) 2026 Tyler Blankenship\n` +
+            `// Generated by ATKMA transpiler v1.0.0\n` +
+            `// This file was produced by the ATKMA exchange process.\n` +
+            `// Original file is preserved -- this is a new supplemental file.\n` +
+            `// See LICENSE_TOADSTOOL.md for full terms.\n\n`;
+
+          function exchange_var(line, all_lines, line_idx) {
+            const name_match = line.match(/\bvar\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/);
+            const name       = name_match ? name_match[1] : null;
+            let   keyword    = 'const';
+
+            if (name) {
+              const rest = all_lines.slice(line_idx + 1);
+              const reassigned = rest.some(l => {
+                const re = new RegExp(`\\b${name}\\s*=(?!=)`, 'g');
+                return re.test(l);
+              });
+              if (reassigned) keyword = 'let';
+            }
+
+            return {
+              result:  line.replace(/\bvar\b/, keyword),
+              keyword,
+              note:    `var -> ${keyword} (ATKMA exchange_var)`,
+            };
+          }
+
+          function exchange_catch_e(line, all_lines, line_idx) {
+            let depth   = 0;
+            let started = false;
+            let uses_e  = false;
+
+            for (let i = line_idx; i < all_lines.length; i++) {
+              const l = all_lines[i];
+              if (l.includes('{')) { depth++; started = true; }
+              if (l.includes('}')) {
+                depth--;
+                if (started && depth === 0) break;
+              }
+              if (started && i > line_idx && /\be\b/.test(l)) {
+                uses_e = true;
+              }
+            }
+
+            if (!uses_e) {
+              return {
+                result: line.replace(/catch\s*\(\s*e\s*\)/, 'catch'),
+                note:   'catch(e) unused e -> catch (ATKMA exchange_catch_e_unused)',
+              };
+            }
+
+            const indent   = line.match(/^(\s*)/)[1];
+            const new_line = line.replace(/catch\s*\(\s*e\s*\)/, 'catch(error: unknown)');
+            const helper   =
+              `${indent}  ` +
+              `const _atkma_err = error instanceof Error ? error.message : String(error);`;
+
+            return {
+              result:      new_line,
+              extra_after: helper,
+              body_patch:  { find: /\be\.message\b/g, replace: '_atkma_err' },
+              note:        'catch(e) used e -> typed catch + helper (ATKMA exchange_catch_e_used)',
+            };
+          }
+
+          const results = [];
+
+          for (const [file_path, file_issues] of Object.entries(scan.by_file)) {
+            if (!fs.existsSync(file_path)) continue;
+
+            const source = fs.readFileSync(file_path, 'utf8');
+            const lines  = source.split('\n');
+            const output = [...lines];
+            const log    = [];
+
+            const sorted = [...file_issues].sort((a, b) => b.line_index - a.line_index);
+
+            for (const issue of sorted) {
+              const idx = issue.line_index;
+              let result = null;
+
+              if (issue.exchange === 'exchange_var') {
+                result = exchange_var(output[idx], output, idx);
+              } else if (issue.exchange === 'exchange_catch_e_used') {
+                result = exchange_catch_e(output[idx], output, idx);
+              }
+
+              if (!result) continue;
+
+              output[idx] = result.result;
+
+              if (result.extra_after) {
+                output.splice(idx + 1, 0, result.extra_after);
+              }
+
+              if (result.body_patch) {
+                for (let i = idx + 1; i < output.length; i++) {
+                  output[i] = output[i].replace(
+                    result.body_patch.find,
+                    result.body_patch.replace
+                  );
+                }
+              }
+
+              log.push({
+                line:     issue.line_number,
+                pattern:  issue.pattern_id,
+                original: issue.original,
+                result:   result.result,
+                note:     result.note,
+                agree:    'yes',
+              });
+            }
+
+            const ext      = path.extname(file_path);
+            const base     = path.basename(file_path, ext);
+            const dir      = path.dirname(file_path);
+            const out_path = path.join(dir, base + '.atkma.out.ts');
+
+            const output_content =
+              TOADSTOOL_HEADER +
+              `// Source      : ${file_path}\n` +
+              `// Target      : ${process.env.ATKMA_TARGET || 'deno'}\n` +
+              `// Exchanges   : ${log.length} applied\n` +
+              `// Generated   : ${new Date().toISOString()}\n\n` +
+              output.join('\n');
+
+            fs.writeFileSync(out_path, output_content);
+
+            const ts       = new Date().toISOString().replace(/[:.]/g, '-');
+            const log_path = `atkma/exchanges/${ts}-${base}.atkma`;
+            const log_text = [
+              `ATKMA v1.0`,
+              `TARGET      : ${process.env.ATKMA_TARGET || 'deno'}`,
+              `SOURCE_FILE : ${file_path}`,
+              `OUTPUT_FILE : ${out_path}`,
+              `TIMESTAMP   : ${new Date().toISOString()}`,
+              `EXCHANGES   : ${log.length}`,
+              ``,
+              ...log.flatMap(entry => [
+                `-- EXCHANGE: ${entry.pattern} at line ${entry.line} --`,
+                `ORIGINAL    : ${entry.original}`,
+                `SUPPLEMENT  : ${entry.result}`,
+                `NOTE        : ${entry.note}`,
+                `AGREE       : ${entry.agree}`,
+                `-- END EXCHANGE --`,
+                ``,
+              ]),
+            ].join('\n');
+
+            fs.writeFileSync(log_path, log_text);
+
+            results.push({
+              source:    file_path,
+              output:    out_path,
+              log:       log_path,
+              exchanges: log.length,
+            });
+
+            console.log(`Transpiled: ${file_path} -> ${out_path} (${log.length} exchanges)`);
+          }
+
+          fs.writeFileSync('atkma/exchanges/transpile-summary.json',
+            JSON.stringify({ timestamp: new Date().toISOString(), results }, null, 2));
+
+          console.log(`ATKMA transpile complete. ${results.length} files processed.`);
+          process.exit(0);
+          TRANSPILE_SCRIPT
+
+      - name: Generate ATKMA report markdown
+        run: |
+          node << 'REPORT_SCRIPT'
+          const fs   = require('fs');
+          const scan = JSON.parse(
+            fs.readFileSync('atkma/exchanges/latest-scan.json', 'utf8')
+          );
+
+          let summary = { results: [] };
+          try {
+            summary = JSON.parse(
+              fs.readFileSync('atkma/exchanges/transpile-summary.json', 'utf8')
+            );
+          } catch(_) {}
+
+          const branch = scan.branchName;
+          const ts     = scan.timestamp;
+
+          let md  = `# ATKMA Exchange Report\n\n`;
+          md += `**Language:** ATKMA v1.0 (Adhere To Konwisdom Make Agreement)\n`;
+          md += `**License:** Toadstool Open Source Software License v1.0.0\n`;
+          md += `**Target runtime:** Deno strict mode\n`;
+          md += `**Timestamp:** ${ts}\n`;
+          md += `**Branch:** \`${branch}\`\n\n`;
+          md += `---\n\n`;
+          md += `## What ATKMA exchanged\n\n`;
+          md += `| Pattern | Files | Exchanges Applied |\n`;
+          md += `|---------|-------|------------------|\n`;
+
+          const by_pattern = {};
+          for (const issue of scan.issues) {
+            if (!by_pattern[issue.pattern_id]) {
+              by_pattern[issue.pattern_id] = new Set();
+            }
+            by_pattern[issue.pattern_id].add(issue.file);
+          }
+          for (const [p, files] of Object.entries(by_pattern)) {
+            md += `| \`${p}\` | ${files.size} | ${files.size} |\n`;
+          }
+
+          md += `\n---\n\n`;
+          md += `## Output files produced\n\n`;
+          for (const result of summary.results) {
+            md += `- \`${result.output}\` -- ${result.exchanges} exchanges from \`${result.source}\`\n`;
+          }
+
+          md += `\n---\n\n`;
+          md += `## ATKMA exchange rules applied\n\n`;
+          md += `### var -> const or let\n\n`;
+          md += `var is not allowed in Deno strict mode.\n`;
+          md += `ATKMA detects each var declaration, scans the scope for reassignment,\n`;
+          md += `and exchanges var with const if the variable is never reassigned\n`;
+          md += `or let if it is. The original file is untouched.\n\n`;
+          md += `### catch(e) -> typed catch\n\n`;
+          md += `Deno requires explicit typing in catch parameters.\n`;
+          md += `ATKMA detects catch(e), checks if e is used in the body,\n`;
+          md += `and exchanges to either catch { } (if e unused) or\n`;
+          md += `catch(error: unknown) with a typed helper const (if e is used).\n\n`;
+          md += `---\n\n`;
+          md += `## This branch\n\n`;
+          md += `All output files carry the .atkma.out.ts suffix.\n`;
+          md += `They sit alongside the originals -- nothing is replaced.\n`;
+          md += `This branch can be merged to main independently or extended further.\n`;
+
+          fs.writeFileSync('atkma/ATKMA_REPORT.md', md);
+          console.log('Wrote ATKMA_REPORT.md');
+          process.exit(0);
+          REPORT_SCRIPT
+
+      - name: Commit transpiled files to ATKMA branch
+        run: |
+          BRANCH="${{ needs.detect.outputs.branch_name }}"
+          git add atkma/
+          git add -A
+
+          if ! git diff --staged --quiet; then
+            git commit -m "atkma: apply var and catch(e) exchanges for Deno compatibility
+
+          Branch  : ${BRANCH}
+          Target  : ${{ env.ATKMA_TARGET }}
+          Issues  : ${{ needs.detect.outputs.issue_count }}
+          Files   : ${{ needs.detect.outputs.files_flagged }}
+          License : Toadstool Open Source Software License v1.0.0"
+            git push origin "${BRANCH}"
+            echo "Pushed ATKMA exchange branch: ${BRANCH}"
+          else
+            git push origin "${BRANCH}"
+            echo "Branch pushed with no file changes"
+          fi
+
+      - name: Open pull request for ATKMA exchange branch
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const branch  = `${{ needs.detect.outputs.branch_name }}`;
+            const issues  = `${{ needs.detect.outputs.issue_count }}`;
+            const files   = `${{ needs.detect.outputs.files_flagged }}`;
+            const runUrl  = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const reportUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${branch}/atkma/ATKMA_REPORT.md`;
+
+            try {
+              await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                title: `atkma: Deno compatibility exchanges -- ${new Date().toISOString().slice(0,10)}`,
+                head:  branch,
+                base:  'main',
+                body:
+                  `## ATKMA Exchange Pull Request\n\n` +
+                  `**Language:** ATKMA v1.0\n` +
+                  `**License:** Toadstool Open Source Software License v1.0.0\n` +
+                  `**Run:** [View workflow log](${runUrl})\n` +
+                  `**Report:** [ATKMA_REPORT.md](${reportUrl})\n\n` +
+                  `---\n\n` +
+                  `### What was exchanged\n\n` +
+                  `- **${issues} patterns** found across **${files} files**\n` +
+                  `- var declarations exchanged with const or let\n` +
+                  `- catch(e) patterns exchanged with typed catch parameters\n\n` +
+                  `### What was NOT changed\n\n` +
+                  `- Original .js files are untouched\n` +
+                  `- Output files carry .atkma.out.ts suffix\n` +
+                  `- This branch sits alongside main, not replacing it\n`,
+                draft: false,
+                maintainer_can_modify: true,
+              });
+              console.log('ATKMA pull request created');
+            } catch(error) {
+              console.log('PR already exists or could not be created:', error.message);
+            }
+
+  comment:
+    name: Post ATKMA Report as Commit Comment
+    runs-on: ubuntu-latest
+    needs: [detect, transpile]
+    continue-on-error: true
+    if: always()
+
+    steps:
+      - name: Post comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issues    = `${{ needs.detect.outputs.issue_count }}`;
+            const files     = `${{ needs.detect.outputs.files_flagged }}`;
+            const branch    = `${{ needs.detect.outputs.branch_name }}`;
+            const runUrl    = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const branchUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/tree/${branch}`;
+            const reportUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${branch}/atkma/ATKMA_REPORT.md`;
+            const icon      = issues === '0' ? 'passed' : 'exchanges applied';
+
+            const body =
+              `## ATKMA Deno Compatibility Report -- ${icon}\n\n` +
+              `**Language:** ATKMA v1.0 -- Adhere To Konwisdom Make Agreement\n` +
+              `**License:** Toadstool Open Source Software License v1.0.0\n` +
+              `**Run:** [View log](${runUrl})\n\n` +
+              `| Metric | Value |\n|--------|-------|\n` +
+              `| Patterns found  | ${issues}                              |\n` +
+              `| Files flagged   | ${files}                               |\n` +
+              `| Exchange branch | [\`${branch}\`](${branchUrl})          |\n` +
+              `| F
