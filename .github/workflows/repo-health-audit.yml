@@ -428,9 +428,14 @@ jobs:
       - name: Create fix branch from current HEAD
         run: |
           BRANCH_NAME="${{ needs.audit.outputs.branch_name }}"
+          if [ -z "${BRANCH_NAME}" ]; then
+            BRANCH_NAME="audit/fix-$(date +%Y-%m-%d)-$(head /dev/urandom | tr -dc a-z0-9 | head -c 5)"
+            echo "Branch name was empty, generated fallback: ${BRANCH_NAME}"
+          fi
           git checkout -b "${BRANCH_NAME}"
           echo "Created branch: ${BRANCH_NAME}"
-
+          echo "BRANCH_NAME=${BRANCH_NAME}" >> $GITHUB_ENV
+          
       - name: Apply structural fixes
         run: |
           node << 'FIX_SCRIPT'
