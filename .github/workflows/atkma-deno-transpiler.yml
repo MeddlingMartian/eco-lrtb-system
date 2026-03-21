@@ -495,26 +495,52 @@ jobs:
     if: always()
 
     steps:
-      - name: Post comment
+      - name: Build and post report comment
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const issues    = `${{ needs.detect.outputs.issue_count }}`;
-            const files     = `${{ needs.detect.outputs.files_flagged }}`;
-            const branch    = `${{ needs.detect.outputs.branch_name }}`;
-            const runUrl    = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const branchUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/tree/${branch}`;
-            const reportUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${branch}/atkma/ATKMA_REPORT.md`;
-            const icon      = issues === '0' ? 'passed' : 'exchanges applied';
+            const issues    = "${{ needs.detect.outputs.issue_count }}";
+            const files     = "${{ needs.detect.outputs.files_flagged }}";
+            const branch    = "${{ needs.detect.outputs.branch_name }}";
+            const owner     = context.repo.owner;
+            const repo      = context.repo.repo;
+            const runId     = context.runId;
+            const sha       = context.sha;
 
-            const body =
-              `## ATKMA Deno Compatibility Report -- ${icon}\n\n` +
-              `**Language:** ATKMA v1.0 -- Adhere To Konwisdom Make Agreement\n` +
-              `**License:** Toadstool Open Source Software License v1.0.0\n` +
-              `**Run:** [View log](${runUrl})\n\n` +
-              `| Metric | Value |\n|--------|-------|\n` +
-              `| Patterns found  | ${issues}                              |\n` +
-              `| Files flagged   | ${files}                               |\n` +
-              `| Exchange branch | [\`${branch}\`](${branchUrl})          |\n` +
-              `| F
+            const runUrl    = "https://github.com/" + owner + "/" + repo + "/actions/runs/" + runId;
+            const branchUrl = "https://github.com/" + owner + "/" + repo + "/tree/" + branch;
+            const reportUrl = "https://github.com/" + owner + "/" + repo + "/blob/" + branch + "/atkma/ATKMA_REPORT.md";
+            const icon      = issues === "0" ? "passed" : "exchanges applied";
+
+            const line1  = "## ATKMA Deno Compatibility Report -- " + icon + "\n\n";
+            const line2  = "**Language:** ATKMA v1.0 -- Adhere To Konwisdom Make Agreement\n";
+            const line3  = "**License:** Toadstool Open Source Software License v1.0.0\n";
+            const line4  = "**Run:** [View log](" + runUrl + ")\n\n";
+            const line5  = "| Metric | Value |\n";
+            const line6  = "|--------|-------|\n";
+            const line7  = "| Patterns found  | " + issues + " |\n";
+            const line8  = "| Files flagged   | " + files  + " |\n";
+            const line9  = "| Exchange branch | [" + branch + "](" + branchUrl + ") |\n";
+            const line10 = "| Full report     | [ATKMA_REPORT.md](" + reportUrl + ") |\n\n";
+            const line11 = "ATKMA exchanged var with const or let ";
+            const line12 = "and catch(e) with typed catch parameters.\n";
+            const line13 = "All original files are preserved. ";
+            const line14 = "Output files carry the .atkma.out.ts suffix on the exchange branch.";
+
+            const body = line1 + line2 + line3 + line4 +
+                         line5 + line6 + line7 + line8 +
+                         line9 + line10 + line11 + line12 +
+                         line13 + line14;
+
+            try {
+              await github.rest.repos.createCommitComment({
+                owner:      owner,
+                repo:       repo,
+                commit_sha: sha,
+                body:       body,
+              });
+              console.log("Comment posted successfully");
+            } catch(postError) {
+              console.log("Could not post comment: " + postError.message);
+            }
