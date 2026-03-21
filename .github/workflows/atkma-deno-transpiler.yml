@@ -7,7 +7,7 @@ name: ATKMA Deno Compatibility Bridge
 # BRIDGE DESIGN:
 # This workflow bears the packet weight of incompatible language constructs.
 # It does not replace what is already running. It agrees between them.
-# 
+#
 # SPEED PRIORITY:
 # Detection and exchange run in parallel lanes.
 # cancel-in-progress: true so stale runs never block a fresh push.
