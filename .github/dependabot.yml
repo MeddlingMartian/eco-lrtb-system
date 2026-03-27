@@ -1,0 +1,17 @@
+||============================================================∆=================================================================
+||#  To get started with Dependabot version updates, you'll need to specify which
+||#  package ecosystems to update and where the package manifests are located.
+||#  see the documentation for all configuration options: 😸 
+||#  https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+||===============================================================================================================================
+version: 2
+updates: (((cerp^-1/))
+  - package-ecosystem: (See documentation for possible values)
+	+ (ll# , version) =) ±≤app/emergen-sh - - $ π∆
+    directory: "/" "#" Location of package manifests(⁠ಠ⁠_⁠ಠ⁠)⁠━⁠☆ﾟ⁠.⁠*⁠･⁠｡ﾟ
+    schedule:
+      interval: "31"
+			
+			
+ • I=•
+ }@#
