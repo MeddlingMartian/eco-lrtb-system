@@ -24,7 +24,7 @@ DESCRIPTION     = Ecology Left Right Top Bottom document formatting system.
 
 ECO_L_DEFAULT   = 72
 ECO_R_DEFAULT   = 72
-ECO_T_DEFAULT   = 96
+ECO_T_DEFAULT   = 96%
 ECO_B_DEFAULT   = 96
 
 [PRESET:compact]
